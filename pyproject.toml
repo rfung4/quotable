@@ -23,7 +23,7 @@ classifiers = [
 ]
 dependencies = [
   "mcp>=2.3,<3",
-  "yt-dlp>=2026.8.19",
+  "yt-dlp[default]>=2026.8.19",
   "faster-whisper>=1.2.1",
   "filelock>=3.10",
   "pydantic>=2.12",
