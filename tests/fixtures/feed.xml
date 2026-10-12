@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-written fixture. Items are deliberately out of date order. -->
+<rss version="2.0"
+     xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+     xmlns:podcast="https://podcastindex.org/namespace/1.0">
+  <channel>
+    <title>Quotable Test Cast</title>
+    <item>
+      <title>Episode 2: Interviews</title>
+      <guid isPermaLink="false">ep-2</guid>
+      <pubDate>Tue, 06 Oct 2026 09:00:00 +0000</pubDate>
+      <itunes:duration>1800</itunes:duration>
+      <enclosure url="https://media.example/ep2.mp3" length="1" type="audio/mpeg"/>
+      <podcast:transcript url="https://media.example/ep2.vtt" type="text/vtt"/>
+      <podcast:transcript url="https://media.example/ep2.srt" type="application/x-subrip"/>
+      <podcast:transcript url="https://media.example/ep2.json" type="application/json" language="en"/>
+      <podcast:transcript url="https://media.example/ep2.html" type="text/html"/>
+    </item>
+    <item>
+      <title>Episode 3: Q&amp;A</title>
+      <guid>ep-3</guid>
+      <pubDate>Mon, 12 Oct 2026 09:00:00 +0000</pubDate>
+      <itunes:duration>1:02:03</itunes:duration>
+      <enclosure url="https://media.example/ep3.m4a?token=abc" length="1" type="audio/mp4"/>
+    </item>
+    <item>
+      <title>Episode 1: Pilot</title>
+      <guid>1</guid>
+      <pubDate>Tue, 01 Sep 2026 09:00:00 +0000</pubDate>
+      <itunes:duration>45:30</itunes:duration>
+      <enclosure url="https://media.example/ep1.mp3" length="1" type="audio/mpeg"/>
+      <podcast:transcript url="https://media.example/ep1.srt" type="application/srt"/>
+    </item>
+    <item>
+      <title>Bonus</title>
+      <enclosure url="https://media.example/bonus.mp3" length="1" type="audio/mpeg"/>
+    </item>
+  </channel>
+</rss>

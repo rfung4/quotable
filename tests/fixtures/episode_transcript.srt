@@ -1,0 +1,12 @@
+1
+00:00:00,500 --> 00:00:03,250
+Welcome to the <b>pilot</b> episode.
+
+2
+00:00:03,250 --> 00:00:06,000
+Today: why transcripts
+should be citable.
+
+3
+01:00:00,000 --> 01:00:01,5
+Bye.
