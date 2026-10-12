@@ -121,3 +121,15 @@ class DiarizationUnavailableError(QuotableError):
 
 class CancelledError(QuotableError):
     default_fix = "Call again to resume from the saved partial transcript."
+
+
+class TranscriptPage(BaseModel):
+    id: str
+    text: str
+    offset: int
+    next_offset: int | None = Field(
+        default=None, description="Pass back as `offset` for the next page; null when done."
+    )
+    total_chars: int
+    start_s: float | None = None
+    end_s: float | None = None
