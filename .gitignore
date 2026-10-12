@@ -1,0 +1,28 @@
+# Messy exploration (not tracked)
+docs/research/
+
+# Local feature tracking (not tracked)
+docs/development/
+
+# Completion reports (not tracked)
+docs/report/
+
+# Auto-archived docs (not tracked)
+docs/.archive/
+
+# Python / uv
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Benchmark output (scripts/bench.py)
+bench.md
+
+# Claude Code session state
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
