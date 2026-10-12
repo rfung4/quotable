@@ -19,7 +19,7 @@ from quotable.models import Segment, TranscriptionError, Word
 SAMPLE_RATE = 16000
 _CUDA_HINTS = ("cuda", "cudnn", "cublas", "libcu", "gpu")
 
-_INFERENCE_LOCK = threading.Lock()
+INFERENCE_LOCK = threading.Lock()
 _MODEL_LOCK = threading.Lock()
 _model: tuple[tuple[str, str, str], Any] | None = None
 _cuda_broken = False
@@ -149,7 +149,7 @@ class WhisperRun:
         self.duration = info.duration
 
     def __enter__(self) -> WhisperRun:
-        _INFERENCE_LOCK.acquire()
+        INFERENCE_LOCK.acquire()
         try:
             try:
                 self._start()
@@ -160,7 +160,7 @@ class WhisperRun:
                     raise TranscriptionError(f"Whisper failed to start: {exc}") from exc
                 self._fall_back(exc)
         except BaseException:
-            _INFERENCE_LOCK.release()
+            INFERENCE_LOCK.release()
             raise
         return self
 
@@ -192,7 +192,7 @@ class WhisperRun:
         if close is not None:
             close()
         self._segments = None
-        _INFERENCE_LOCK.release()
+        INFERENCE_LOCK.release()
 
 
 def transcribe_iter(

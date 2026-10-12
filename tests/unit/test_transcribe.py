@@ -186,10 +186,10 @@ def test_segments_are_converted_with_clean_words():
 
 def test_inference_lock_is_held_for_the_whole_run_and_released_on_early_exit():
     with tx.transcribe_iter(Path("a.flac"), settings=_settings()) as run:
-        assert tx._INFERENCE_LOCK.locked()
+        assert tx.INFERENCE_LOCK.locked()
         for _ in run:
             break  # a cancel between segments
-    assert not tx._INFERENCE_LOCK.locked()
+    assert not tx.INFERENCE_LOCK.locked()
 
 
 def test_lock_released_when_start_fails(monkeypatch):
@@ -197,4 +197,4 @@ def test_lock_released_when_start_fails(monkeypatch):
     FakeModel.fail_load_on = {"cpu"}
     with pytest.raises(TranscriptionError):
         _run(_settings())
-    assert not tx._INFERENCE_LOCK.locked()
+    assert not tx.INFERENCE_LOCK.locked()
