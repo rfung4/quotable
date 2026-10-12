@@ -1,0 +1,22 @@
+{
+  "wireMagic": "pb3",
+  "events": [
+    {"tStartMs": 0, "dDurationMs": 7000, "id": 1, "wpWinPosId": 1, "wsWinStyleId": 1},
+    {"tStartMs": 120, "dDurationMs": 4000, "wWinId": 1, "segs": [
+      {"utf8": "ask", "acAsrConf": 0},
+      {"utf8": " not", "tOffsetMs": 400, "acAsrConf": 0},
+      {"utf8": " what", "tOffsetMs": 700, "acAsrConf": 0}
+    ]},
+    {"tStartMs": 2310, "dDurationMs": 10, "wWinId": 1, "aAppend": 1, "segs": [{"utf8": "\n"}]},
+    {"tStartMs": 2320, "dDurationMs": 4680, "wWinId": 1, "segs": [
+      {"utf8": "your", "acAsrConf": 0},
+      {"utf8": " country", "tOffsetMs": 280, "acAsrConf": 0},
+      {"utf8": " can", "tOffsetMs": 680, "acAsrConf": 0},
+      {"utf8": " do", "tOffsetMs": 980, "acAsrConf": 0}
+    ]},
+    {"tStartMs": 4960, "dDurationMs": 2040, "wWinId": 1, "segs": [
+      {"utf8": "for"},
+      {"utf8": " you", "tOffsetMs": 240}
+    ]}
+  ]
+}

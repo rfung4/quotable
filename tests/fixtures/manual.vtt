@@ -1,0 +1,16 @@
+WEBVTT
+Kind: captions
+Language: en
+
+NOTE hand-written fixture: a cue id, styling tags, an entity and a two-line cue
+
+intro
+00:00:01.000 --> 00:00:03.500
+<v Narrator>And so, my fellow Americans:</v>
+
+00:03.500 --> 00:06.250 line:90%
+ask not what your country
+can do for <i>you</i> &amp; ask
+
+01:00:00.000 --> 01:00:02.000
+what you can do for your country.
