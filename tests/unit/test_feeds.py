@@ -387,3 +387,16 @@ def test_duration_formats():
     assert feeds.parse_duration("1:2:3:4") is None
     assert feeds.parse_duration("soon") is None
     assert feeds.parse_duration(None) is None
+
+
+def test_transcript_tag_under_the_github_namespace_url_is_detected():
+    # The Podcasting 2.0 show's own feed declares the original namespace URL.
+    body = b"""<?xml version="1.0"?>
+<rss version="2.0"
+     xmlns:podcast="https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md">
+<channel><title>PC20</title><item><title>Ep</title><guid>g1</guid>
+<enclosure url="https://media.example/ep.mp3" type="audio/mpeg"/>
+<podcast:transcript url="https://media.example/ep.srt" type="application/srt"/>
+</item></channel></rss>"""
+    feed = feeds.parse_feed(body, FEED_URL)
+    assert [t.kind for t in feed.episodes[0].transcripts] == ["srt"]

@@ -220,7 +220,9 @@ def _published(raw: str | None) -> tuple[str | None, float | None]:
 def _transcripts(item: ET.Element) -> tuple[TranscriptRef, ...]:
     refs = []
     for child in item:
-        if _local(child.tag) != "transcript" or "podcastindex" not in _ns(child.tag):
+        # Both namespace URLs are in the wild: podcastindex.org/namespace/1.0 and the
+        # original github.com/Podcastindex-org/... one, so the check is case-insensitive.
+        if _local(child.tag) != "transcript" or "podcastindex" not in _ns(child.tag).lower():
             continue
         kind = _TRANSCRIPT_TYPES.get((child.get("type") or "").split(";")[0].strip().lower())
         url = (child.get("url") or "").strip()
