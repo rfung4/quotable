@@ -208,7 +208,7 @@
       "tier": "short",
       "diarize": true,
       "readme_row": false,
-      "note": "Two speakers; names, dates, currency figures, acronyms. Absent until Task 2 runs"
+      "note": "Two speakers; names, dates, currency figures, acronyms; 351 s."
     },
     {
       "id": "interview-3",
@@ -219,11 +219,11 @@
         "name": "Synthesised here (OpenAI TTS) from a script written for this evaluation",
         "source_url": "evals/tts/interview-3.json"
       },
-      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": 3, "duration_s": 480.0, "chapters": false},
+      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": 3, "duration_s": 406.0, "chapters": false},
       "tier": "short",
       "diarize": true,
       "readme_row": false,
-      "note": "Three speakers with interjections under 2 s, diarization's hard case. Absent until Task 2 runs"
+      "note": "Three speakers with interjections under 2 s, diarization's hard case."
     },
     {
       "id": "lecture-1",
@@ -234,11 +234,11 @@
         "name": "Synthesised here (OpenAI TTS) from a script written for this evaluation",
         "source_url": "evals/tts/lecture-1.json"
       },
-      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": 1, "duration_s": 600.0, "chapters": false},
+      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": 1, "duration_s": 526.0, "chapters": false},
       "tier": "short",
       "diarize": false,
       "readme_row": false,
-      "note": "One speaker, technical vocabulary, a 20 s silent gap mid-way. Absent until Task 2 runs"
+      "note": "One speaker, technical vocabulary, a 20 s silent gap mid-way."
     },
     {
       "id": "ocw-manual-53m",
