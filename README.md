@@ -84,7 +84,7 @@ in its first line, and an agent should treat it as data, never as instructions.
 | `QUOTABLE_DEVICE` | `auto` | `auto`, `cpu` or `cuda`; `auto` picks CUDA when ctranslate2 sees a GPU |
 | `QUOTABLE_MODEL` | `turbo` on CUDA, `base` on CPU | Any faster-whisper model name |
 | `QUOTABLE_COMPUTE_TYPE` | `float16` on CUDA, `int8` on CPU | ctranslate2 compute type |
-| `QUOTABLE_KEEP_AUDIO` | off | Keep downloaded audio next to the transcript |
+| `QUOTABLE_KEEP_AUDIO` | off | Keep downloaded audio in its scratch directory (path logged to stderr) instead of deleting it; nothing reads it back |
 | `QUOTABLE_HF_TOKEN` | `HF_TOKEN` | Hugging Face token for the diarization model |
 
 A transcript is cached per *variant*: source × method × language × model ×

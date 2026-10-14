@@ -569,15 +569,24 @@ def test_media_info_lists_the_original_auto_caption_language(uncaptioned):
     assert pipeline.media_info(YT_URL).languages == ["de"]
 
 
-def test_media_info_for_a_feed_describes_the_episode_and_lists_recent(net):
-    newest = pipeline.media_info(FEED_URL)
+def test_media_info_for_a_feed_names_the_show_unless_an_episode_is_asked_for(net):
+    show = pipeline.media_info(FEED_URL)
     pilot = pipeline.media_info(FEED_URL, episode="Pilot")
+    first = pipeline.media_info(FEED_URL, episode=1)
 
-    assert newest.kind is SourceKind.FEED and newest.title == "Episode 3: Q&A"
-    assert newest.has_captions is False and newest.duration == 3723.0
-    assert [e.title for e in newest.episodes][:2] == ["Episode 3: Q&A", "Episode 2: Interviews"]
+    # No episode: the title is the show's; the other fields still describe the newest one.
+    assert show.kind is SourceKind.FEED and show.title == "Quotable Test Cast"
+    assert show.has_captions is False and show.duration == 3723.0
+    assert [e.title for e in show.episodes][:2] == ["Episode 3: Q&A", "Episode 2: Interviews"]
     assert pilot.has_captions is True and pilot.title == "Episode 1: Pilot"
+    assert first.title == "Episode 3: Q&A"
     assert net.streamed == []
+
+
+def test_media_info_lists_each_recent_episodes_declared_transcript_types(net):
+    listed = {e.title: e for e in pipeline.media_info(FEED_URL).episodes}
+    assert "text/html" in listed["Episode 2: Interviews"].transcript_types
+    assert listed["Episode 3: Q&A"].transcript_types == []
 
 
 def test_media_info_refuses_episode_on_a_file():

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from quotable import feeds
+from quotable import __version__, feeds
 from quotable.models import DownloadError, NoCaptionsError, SourceError, SourceKind
 
 FIXTURES = Path(__file__).parents[1] / "fixtures"
@@ -34,10 +34,12 @@ class FakeOpener:
     def __init__(self, bodies=None, final_url=None, error=None):
         self.bodies, self.final_url, self.error = bodies or {}, final_url or {}, error
         self.opened: list[str] = []
+        self.requests: list = []
 
     def open(self, req, timeout=None):
         assert timeout == feeds.TIMEOUT_S
         self.opened.append(req.full_url)
+        self.requests.append(req)
         if self.error:
             raise self.error
         return FakeResp(self.bodies[req.full_url], self.final_url.get(req.full_url, req.full_url))
@@ -400,3 +402,36 @@ def test_transcript_tag_under_the_github_namespace_url_is_detected():
 </item></channel></rss>"""
     feed = feeds.parse_feed(body, FEED_URL)
     assert [t.kind for t in feed.episodes[0].transcripts] == ["srt"]
+
+
+def test_request_user_agent_names_the_project_and_where_to_find_it(net):
+    # podcastindex.org answers 403 to generic agents and 200 to one that says who is asking.
+    _feed(net)
+    agent = net.requests[0].get_header("User-agent")
+    assert agent == feeds.USER_AGENT
+    assert agent.startswith(f"quotable/{__version__} (+https://github.com/rfung4/quotable)")
+
+
+def test_declared_transcript_types_are_listed_even_when_none_is_usable(net):
+    feed = _feed(net)
+    by_title = {ep.title: ep for ep in feed.episodes}
+    interviews = by_title["Episode 2: Interviews"]
+    assert interviews.transcript_types == (
+        "text/vtt",
+        "application/x-subrip",
+        "application/json",
+        "text/html",
+    )
+    assert interviews.info().transcript_types == list(interviews.transcript_types)
+
+    body = b"""<?xml version="1.0"?>
+<rss version="2.0" xmlns:podcast="https://podcastindex.org/namespace/1.0">
+<channel><title>Html Only</title><item><title>Ep</title><guid>g1</guid>
+<enclosure url="https://media.example/ep.mp3" type="audio/mpeg"/>
+<podcast:transcript url="https://media.example/ep.html" type="text/html; charset=utf-8"/>
+<podcast:transcript url="https://media.example/ep2.html" type="text/html"/>
+</item></channel></rss>"""
+    episode = feeds.parse_feed(body, FEED_URL).episodes[0]
+    assert episode.transcripts == ()  # nothing quotable can use
+    assert episode.info().has_transcript is False
+    assert episode.info().transcript_types == ["text/html"]  # lower-cased, parameters dropped

@@ -74,6 +74,9 @@ class EpisodeInfo(BaseModel):
     published: str | None = None
     duration: float | None = None
     has_transcript: bool = False
+    # Every podcast:transcript type the item declares, usable or not. has_transcript is
+    # "quotable can use one"; this says what is there when it is false (html-only feeds).
+    transcript_types: list[str] = Field(default_factory=list)
 
 
 class MediaInfo(BaseModel):

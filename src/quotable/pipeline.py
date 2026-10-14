@@ -364,10 +364,13 @@ def media_info(source: str, episode: str | int | None = None) -> MediaInfo:
         if track is not None and track.auto:
             languages.append(track.language)
         episodes = []
+    title = src.title
+    if src.kind is SourceKind.FEED and episode in (None, "") and src.feed.title:
+        title = src.feed.title  # no episode asked for: this is the show
     return MediaInfo(
         source=source,
         kind=src.kind,
-        title=src.title,
+        title=title,
         duration=src.duration,
         has_captions=has_captions,
         languages=list(dict.fromkeys(languages)),

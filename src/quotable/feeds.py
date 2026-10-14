@@ -32,6 +32,9 @@ from quotable.models import (
 )
 
 TIMEOUT_S = 30
+# Some hosts (podcastindex.org) answer 403 to a bare or generic agent and 200 to one that
+# says who is asking and where to find them.
+USER_AGENT = f"quotable/{__version__} (+https://github.com/rfung4/quotable)"
 SNIFF_BYTES = 64 * 1024
 FEED_MAX_BYTES = 50 * 1024 * 1024
 TRANSCRIPT_MAX_BYTES = 10 * 1024 * 1024
@@ -102,7 +105,7 @@ _OPENER = _build_opener()
 
 def _open(url: str):
     _check_scheme(url)
-    req = urllib.request.Request(url, headers={"User-Agent": f"quotable/{__version__}"})
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     resp = _OPENER.open(req, timeout=TIMEOUT_S)
     try:
         _check_scheme(resp.geturl())
@@ -155,6 +158,7 @@ class Episode:
     duration: float | None
     enclosure_url: str | None
     transcripts: tuple[TranscriptRef, ...] = ()
+    transcript_types: tuple[str, ...] = ()
 
     def info(self) -> EpisodeInfo:
         return EpisodeInfo(
@@ -164,6 +168,7 @@ class Episode:
             published=self.published,
             duration=self.duration,
             has_transcript=bool(self.transcripts),
+            transcript_types=list(self.transcript_types),
         )
 
 
@@ -217,18 +222,23 @@ def _published(raw: str | None) -> tuple[str | None, float | None]:
     return dt.isoformat(), dt.timestamp()
 
 
-def _transcripts(item: ET.Element) -> tuple[TranscriptRef, ...]:
-    refs = []
+def _transcripts(item: ET.Element) -> tuple[tuple[TranscriptRef, ...], tuple[str, ...]]:
+    """The usable transcript refs, and every declared type (usable or not, deduplicated)."""
+    refs: list[TranscriptRef] = []
+    types: list[str] = []
     for child in item:
         # Both namespace URLs are in the wild: podcastindex.org/namespace/1.0 and the
         # original github.com/Podcastindex-org/... one, so the check is case-insensitive.
         if _local(child.tag) != "transcript" or "podcastindex" not in _ns(child.tag).lower():
             continue
-        kind = _TRANSCRIPT_TYPES.get((child.get("type") or "").split(";")[0].strip().lower())
+        mime = (child.get("type") or "").split(";")[0].strip().lower()
+        if mime and mime not in types:
+            types.append(mime)
+        kind = _TRANSCRIPT_TYPES.get(mime)
         url = (child.get("url") or "").strip()
         if kind and url:
             refs.append(TranscriptRef(url=url, kind=kind, language=child.get("language")))
-    return tuple(refs)
+    return tuple(refs), tuple(types)
 
 
 def _enclosure_url(enclosure: ET.Element | None) -> str | None:
@@ -249,6 +259,7 @@ def parse_feed(body: bytes, url: str) -> Feed:
     for order, item in enumerate(channel.findall("item")):
         enclosure = item.find("enclosure")
         published, ts = _published(_child_text(item, "pubDate"))
+        transcripts, transcript_types = _transcripts(item)
         raw.append(
             (
                 ts,
@@ -259,7 +270,8 @@ def parse_feed(body: bytes, url: str) -> Feed:
                     published=published,
                     duration=parse_duration(_child_text(item, "duration", "itunes")),
                     enclosure_url=_enclosure_url(enclosure),
-                    transcripts=_transcripts(item),
+                    transcripts=transcripts,
+                    transcript_types=transcript_types,
                 ),
             )
         )

@@ -121,7 +121,8 @@ def create_server(settings: Settings | None = None) -> MCPServer:
     ) -> MediaInfo:
         """Describe a source without downloading or transcribing it: title, duration, caption
         languages, chapters, and for a podcast feed its recent episodes. Use it to check a
-        source or pick an episode before `transcribe`."""
+        source or pick an episode before `transcribe`. For a feed with no `episode`, `title`
+        is the show's and the other fields describe the newest episode."""
         with _tool_errors():
             return await anyio.to_thread.run_sync(pipeline.media_info, source, episode)
 
