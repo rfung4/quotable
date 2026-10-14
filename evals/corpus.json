@@ -364,11 +364,11 @@
         "name": "All rights reserved (feed copyright: NPR, for personal use only); fetched for private evaluation, not redistributed",
         "source_url": "https://feeds.npr.org/510289/podcast.xml"
       },
-      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": null, "duration_s": 1530.0, "chapters": false},
+      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": null, "duration_s": 1741.0, "feed_duration_s": 1530.0, "chapters": false},
       "tier": "short",
       "diarize": false,
       "readme_row": true,
-      "note": "Enclosure only, 25.5 min; the README's CPU and GPU rows. The newest episode was 30.1 min, over the short tier, so this one is pinned by guid"
+      "note": "Enclosure only, 29.0 min of audio although the feed declares 25.5 (stable across downloads); the README's CPU and GPU rows, labelled with the audio length. The newest episode was 30.1 min, over the short tier, so this one is pinned by guid"
     },
     {
       "id": "lex-497",

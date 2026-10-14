@@ -189,8 +189,12 @@ def check_feed(entry: dict[str, Any]) -> list[str]:
         problems.append(f"usable transcript tag is {has_tag}, expected {expect['transcript_tag']}")
     if ep.duration is None:
         problems.append("the feed gives this episode no duration")
-    elif not _within(ep.duration, expect["duration_s"]):
-        problems.append(f"duration {ep.duration} s, expected ~{expect['duration_s']} s")
+    else:
+        # The feed's declared length can differ from the audio's (NPR inserts ads), so the
+        # manifest may carry both: duration_s is the audio, feed_duration_s the feed's claim.
+        declared = expect.get("feed_duration_s", expect["duration_s"])
+        if not _within(ep.duration, declared):
+            problems.append(f"declared duration {ep.duration} s, expected ~{declared} s")
     if not ep.enclosure_url:
         problems.append("no enclosure URL")
     return problems
