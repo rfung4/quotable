@@ -1,0 +1,404 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "jfk.flac",
+      "kind": "file",
+      "source": "tests/fixtures/jfk.flac",
+      "license": {
+        "name": "Public domain (US federal government work, 17 U.S.C. 105)",
+        "source_url": "tests/fixtures/README.md"
+      },
+      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": 1, "duration_s": 11.0, "chapters": false, "sample_rate": 16000, "channels": 1, "video": false},
+      "tier": "short",
+      "diarize": false,
+      "readme_row": false,
+      "note": "The committed fixture; the smoke cell of the matrix and the source of every generated local file"
+    },
+    {
+      "id": "jfk-wav-16k-mono",
+      "kind": "file",
+      "source": "evals/media/local/jfk-wav-16k-mono.wav",
+      "build": {"args": ["-i", "{src}", "-ac", "1", "-ar", "16000"]},
+      "license": {
+        "name": "Public domain (US federal government work, 17 U.S.C. 105)",
+        "source_url": "tests/fixtures/README.md"
+      },
+      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": 1, "duration_s": 11.0, "chapters": false, "sample_rate": 16000, "channels": 1, "video": false},
+      "tier": "short",
+      "diarize": false,
+      "readme_row": false,
+      "note": "PCM WAV, the format Whisper decodes to anyway"
+    },
+    {
+      "id": "jfk-mp3-128k",
+      "kind": "file",
+      "source": "evals/media/local/jfk-mp3-128k.mp3",
+      "build": {"args": ["-i", "{src}", "-ac", "1", "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "128k"]},
+      "license": {
+        "name": "Public domain (US federal government work, 17 U.S.C. 105)",
+        "source_url": "tests/fixtures/README.md"
+      },
+      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": 1, "duration_s": 11.0, "chapters": false, "sample_rate": 44100, "channels": 1, "video": false},
+      "tier": "short",
+      "diarize": false,
+      "readme_row": false,
+      "note": "Lossy, upsampled; the common podcast container"
+    },
+    {
+      "id": "jfk-m4a-aac",
+      "kind": "file",
+      "source": "evals/media/local/jfk-m4a-aac.m4a",
+      "build": {"args": ["-i", "{src}", "-ac", "1", "-ar", "44100", "-c:a", "aac", "-b:a", "96k"]},
+      "license": {
+        "name": "Public domain (US federal government work, 17 U.S.C. 105)",
+        "source_url": "tests/fixtures/README.md"
+      },
+      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": 1, "duration_s": 11.0, "chapters": false, "sample_rate": 44100, "channels": 1, "video": false},
+      "tier": "short",
+      "diarize": false,
+      "readme_row": false,
+      "note": "AAC in MP4, what a voice-memo app records"
+    },
+    {
+      "id": "jfk-ogg-opus",
+      "kind": "file",
+      "source": "evals/media/local/jfk-ogg-opus.ogg",
+      "build": {"args": ["-i", "{src}", "-ac", "1", "-c:a", "libopus", "-b:a", "32k"]},
+      "license": {
+        "name": "Public domain (US federal government work, 17 U.S.C. 105)",
+        "source_url": "tests/fixtures/README.md"
+      },
+      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": 1, "duration_s": 11.0, "chapters": false, "sample_rate": 48000, "channels": 1, "video": false},
+      "tier": "short",
+      "diarize": false,
+      "readme_row": false,
+      "note": "Opus always decodes at 48 kHz"
+    },
+    {
+      "id": "jfk-mp4-video",
+      "kind": "file",
+      "source": "evals/media/local/jfk-mp4-video.mp4",
+      "build": {"args": ["-f", "lavfi", "-i", "color=c=black:s=320x240:r=10", "-i", "{src}", "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-shortest"]},
+      "license": {
+        "name": "Public domain (US federal government work, 17 U.S.C. 105)",
+        "source_url": "tests/fixtures/README.md"
+      },
+      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": 1, "duration_s": 11.0, "chapters": false, "sample_rate": 16000, "channels": 1, "video": true},
+      "tier": "short",
+      "diarize": false,
+      "readme_row": false,
+      "note": "Black H.264 video plus AAC audio; the audio stream must be found past the video one"
+    },
+    {
+      "id": "jfk-mkv-video",
+      "kind": "file",
+      "source": "evals/media/local/jfk-mkv-video.mkv",
+      "build": {"args": ["-f", "lavfi", "-i", "color=c=black:s=320x240:r=10", "-i", "{src}", "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "flac", "-shortest"]},
+      "license": {
+        "name": "Public domain (US federal government work, 17 U.S.C. 105)",
+        "source_url": "tests/fixtures/README.md"
+      },
+      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": 1, "duration_s": 11.0, "chapters": false, "sample_rate": 16000, "channels": 1, "video": true},
+      "tier": "short",
+      "diarize": false,
+      "readme_row": false,
+      "note": "Matroska, black H.264 video plus FLAC audio"
+    },
+    {
+      "id": "jfk-webm-video",
+      "kind": "file",
+      "source": "evals/media/local/jfk-webm-video.webm",
+      "build": {"args": ["-f", "lavfi", "-i", "color=c=black:s=320x240:r=10", "-i", "{src}", "-map", "0:v", "-map", "1:a", "-c:v", "libvpx", "-b:v", "50k", "-c:a", "libopus", "-b:a", "32k", "-shortest"]},
+      "license": {
+        "name": "Public domain (US federal government work, 17 U.S.C. 105)",
+        "source_url": "tests/fixtures/README.md"
+      },
+      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": 1, "duration_s": 11.0, "chapters": false, "sample_rate": 48000, "channels": 1, "video": true},
+      "tier": "short",
+      "diarize": false,
+      "readme_row": false,
+      "note": "WebM, black VP8 video plus Opus audio"
+    },
+    {
+      "id": "jfk-wav-48k-stereo",
+      "kind": "file",
+      "source": "evals/media/local/jfk-wav-48k-stereo.wav",
+      "build": {"args": ["-i", "{src}", "-ac", "2", "-ar", "48000"]},
+      "license": {
+        "name": "Public domain (US federal government work, 17 U.S.C. 105)",
+        "source_url": "tests/fixtures/README.md"
+      },
+      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": 1, "duration_s": 11.0, "chapters": false, "sample_rate": 48000, "channels": 2, "video": false},
+      "tier": "short",
+      "diarize": false,
+      "readme_row": false,
+      "note": "Studio format: resample and down-mix on the way in"
+    },
+    {
+      "id": "jfk-wav-8k-mono",
+      "kind": "file",
+      "source": "evals/media/local/jfk-wav-8k-mono.wav",
+      "build": {"args": ["-i", "{src}", "-ac", "1", "-ar", "8000"]},
+      "license": {
+        "name": "Public domain (US federal government work, 17 U.S.C. 105)",
+        "source_url": "tests/fixtures/README.md"
+      },
+      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": 1, "duration_s": 11.0, "chapters": false, "sample_rate": 8000, "channels": 1, "video": false},
+      "tier": "short",
+      "diarize": false,
+      "readme_row": false,
+      "note": "Telephone band: narrow-band input"
+    },
+    {
+      "id": "jfk-clip-0.6s",
+      "kind": "file",
+      "source": "evals/media/local/jfk-clip-0.6s.wav",
+      "build": {"args": ["-i", "{src}", "-ac", "1", "-ar", "16000", "-t", "0.6"]},
+      "license": {
+        "name": "Public domain (US federal government work, 17 U.S.C. 105)",
+        "source_url": "tests/fixtures/README.md"
+      },
+      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": 1, "duration_s": 0.6, "chapters": false, "sample_rate": 16000, "channels": 1, "video": false},
+      "tier": "short",
+      "diarize": false,
+      "readme_row": false,
+      "note": "Shorter than one VAD window; the reference may legitimately be empty"
+    },
+    {
+      "id": "silence-30s",
+      "kind": "file",
+      "source": "evals/media/local/silence-30s.wav",
+      "build": {"args": ["-f", "lavfi", "-i", "anullsrc=r=16000:cl=mono", "-t", "30"]},
+      "license": {
+        "name": "Generated here (ffmpeg anullsrc), no third-party content",
+        "source_url": "evals/build_corpus.py"
+      },
+      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": null, "duration_s": 30.0, "chapters": false, "sample_rate": 16000, "channels": 1, "video": false},
+      "tier": "short",
+      "diarize": false,
+      "readme_row": false,
+      "note": "Hallucination probe: any word out of it is a defect"
+    },
+    {
+      "id": "jfk-loop-3h",
+      "kind": "file",
+      "source": "evals/media/local/jfk-loop-3h.wav",
+      "build": {"args": ["-stream_loop", "999", "-i", "{src}", "-ac", "1", "-ar", "16000"]},
+      "license": {
+        "name": "Public domain (US federal government work, 17 U.S.C. 105)",
+        "source_url": "tests/fixtures/README.md"
+      },
+      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": 1, "duration_s": 11000.0, "chapters": false, "sample_rate": 16000, "channels": 1, "video": false},
+      "tier": "long",
+      "diarize": false,
+      "readme_row": false,
+      "note": "The 11-second clip 1000 times (3 h 3 min) with known content, for the long path"
+    },
+    {
+      "id": "meeting-2",
+      "kind": "tts",
+      "source": "evals/media/tts/meeting-2.wav",
+      "script": "evals/tts/meeting-2.json",
+      "license": {
+        "name": "Synthesised here (OpenAI TTS) from a script written for this evaluation",
+        "source_url": "evals/tts/meeting-2.json"
+      },
+      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": 2, "duration_s": 360.0, "chapters": false},
+      "tier": "short",
+      "diarize": true,
+      "readme_row": false,
+      "note": "Two speakers; names, dates, currency figures, acronyms. Absent until Task 2 runs"
+    },
+    {
+      "id": "interview-3",
+      "kind": "tts",
+      "source": "evals/media/tts/interview-3.wav",
+      "script": "evals/tts/interview-3.json",
+      "license": {
+        "name": "Synthesised here (OpenAI TTS) from a script written for this evaluation",
+        "source_url": "evals/tts/interview-3.json"
+      },
+      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": 3, "duration_s": 480.0, "chapters": false},
+      "tier": "short",
+      "diarize": true,
+      "readme_row": false,
+      "note": "Three speakers with interjections under 2 s, diarization's hard case. Absent until Task 2 runs"
+    },
+    {
+      "id": "lecture-1",
+      "kind": "tts",
+      "source": "evals/media/tts/lecture-1.wav",
+      "script": "evals/tts/lecture-1.json",
+      "license": {
+        "name": "Synthesised here (OpenAI TTS) from a script written for this evaluation",
+        "source_url": "evals/tts/lecture-1.json"
+      },
+      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": 1, "duration_s": 600.0, "chapters": false},
+      "tier": "short",
+      "diarize": false,
+      "readme_row": false,
+      "note": "One speaker, technical vocabulary, a 20 s silent gap mid-way. Absent until Task 2 runs"
+    },
+    {
+      "id": "ocw-manual-53m",
+      "kind": "youtube",
+      "source": "https://www.youtube.com/watch?v=HtSuA80QTyo",
+      "license": {
+        "name": "CC BY-NC-SA 4.0 (channel-stated; yt-dlp's license field is None)",
+        "source_url": "https://ocw.mit.edu/pages/privacy-and-terms-of-use/"
+      },
+      "expect": {"captions": "manual", "transcript_tag": false, "language": "en", "speakers": null, "duration_s": 3180.0, "chapters": true},
+      "tier": "short",
+      "diarize": false,
+      "readme_row": false,
+      "note": "Manual en/ar/zh-CN tracks, 53 min, chapters. The pipeline takes the manual track, so this covers manual + long + chapters, not the auto path"
+    },
+    {
+      "id": "ted-dweck",
+      "kind": "youtube",
+      "source": "https://www.youtube.com/watch?v=_X0mgOOSpLU",
+      "license": {
+        "name": "CC BY-NC-ND 4.0 (TED talks usage policy)",
+        "source_url": "https://www.ted.com/about/our-organization/our-policies-terms/ted-talks-usage-policy"
+      },
+      "expect": {"captions": "manual", "transcript_tag": false, "language": "en", "speakers": 1, "duration_s": 625.0, "chapters": true},
+      "tier": "short",
+      "diarize": false,
+      "readme_row": true,
+      "note": "Manual captions in 43 languages; the README's captions row"
+    },
+    {
+      "id": "nasa-students",
+      "kind": "youtube",
+      "source": "https://www.youtube.com/watch?v=V1O7XfcXGTI",
+      "license": {
+        "name": "Public domain (NASA media usage guidelines: not copyrighted unless noted)",
+        "source_url": "https://www.nasa.gov/nasa-brand-center/images-and-media/"
+      },
+      "expect": {"captions": "asr", "transcript_tag": false, "language": "en", "speakers": null, "duration_s": 1277.0, "chapters": true},
+      "tier": "short",
+      "diarize": true,
+      "readme_row": false,
+      "note": "Auto captions only, so json3 word offsets exist; 15 chapters. An astronaut answering students: the real multi-speaker diarize entry"
+    },
+    {
+      "id": "nasa-artemis-call",
+      "kind": "youtube",
+      "source": "https://www.youtube.com/watch?v=yfmG9qmZn6Y",
+      "license": {
+        "name": "Public domain (NASA media usage guidelines: not copyrighted unless noted)",
+        "source_url": "https://www.nasa.gov/nasa-brand-center/images-and-media/"
+      },
+      "expect": {"captions": "asr", "transcript_tag": false, "language": "en", "speakers": null, "duration_s": 636.0, "chapters": true},
+      "tier": "short",
+      "diarize": false,
+      "readme_row": false,
+      "note": "Auto captions only, 6 chapters, a radio call with channel noise: the second word-timing source"
+    },
+    {
+      "id": "tedx-es",
+      "kind": "youtube",
+      "source": "https://www.youtube.com/watch?v=i5ui_DrtcpU",
+      "license": {
+        "name": "CC BY-NC-ND 4.0 (TED talks usage policy, applies to TEDx)",
+        "source_url": "https://www.ted.com/about/our-organization/our-policies-terms/ted-talks-usage-policy"
+      },
+      "expect": {"captions": "manual", "transcript_tag": false, "language": "es", "speakers": 1, "duration_s": 282.0, "chapters": false},
+      "tier": "short",
+      "diarize": false,
+      "readme_row": false,
+      "note": "Spanish talk with a manual es track: the one non-English item, shows the language path works"
+    },
+    {
+      "id": "darknet-173",
+      "kind": "feed",
+      "source": "https://feeds.megaphone.fm/darknetdiaries",
+      "episode": "prx_7057_1c9ead67-2af4-45f7-b74f-3330ff11c0c1",
+      "license": {
+        "name": "All rights reserved (feed copyright: Jack Rhysider); fetched for private evaluation, not redistributed",
+        "source_url": "https://feeds.megaphone.fm/darknetdiaries"
+      },
+      "expect": {"captions": "none", "transcript_tag": true, "language": "en", "speakers": null, "duration_s": 2281.0, "chapters": false},
+      "tier": "short",
+      "diarize": false,
+      "readme_row": false,
+      "note": "173: Tarjeteros, 38 min, with a transcript tag"
+    },
+    {
+      "id": "darknet-179",
+      "kind": "feed",
+      "source": "https://feeds.megaphone.fm/darknetdiaries",
+      "episode": "prx_7057_82aaba05-80c9-4d2e-8069-3c20f2b7dbc8",
+      "license": {
+        "name": "All rights reserved (feed copyright: Jack Rhysider); fetched for private evaluation, not redistributed",
+        "source_url": "https://feeds.megaphone.fm/darknetdiaries"
+      },
+      "expect": {"captions": "none", "transcript_tag": true, "language": "en", "speakers": null, "duration_s": 5702.0, "chapters": false},
+      "tier": "long",
+      "diarize": false,
+      "readme_row": false,
+      "note": "179: The Courthouse - Revisited, 95 min, with a transcript tag; scenario (e) of Task 6 needs the tag"
+    },
+    {
+      "id": "pc20-269",
+      "kind": "feed",
+      "source": "https://feeds.podcastindex.org/pc20.xml",
+      "episode": "PC20-269",
+      "license": {
+        "name": "No licence stated in the feed; fetched for private evaluation, not redistributed",
+        "source_url": "https://feeds.podcastindex.org/pc20.xml"
+      },
+      "expect": {"captions": "none", "transcript_tag": true, "language": "en", "speakers": null, "duration_s": 5506.0, "chapters": false},
+      "tier": "long",
+      "diarize": false,
+      "readme_row": false,
+      "note": "application/srt on 20/20 episodes, declared under the github.com/Podcastindex-org namespace URL; every episode is about 90 min"
+    },
+    {
+      "id": "planetmoney-ponzi",
+      "kind": "feed",
+      "source": "https://feeds.npr.org/510289/podcast.xml",
+      "episode": "422e04c9-24e3-4eca-bae9-fdd71d614953",
+      "license": {
+        "name": "All rights reserved (feed copyright: NPR, for personal use only); fetched for private evaluation, not redistributed",
+        "source_url": "https://feeds.npr.org/510289/podcast.xml"
+      },
+      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": null, "duration_s": 1530.0, "chapters": false},
+      "tier": "short",
+      "diarize": false,
+      "readme_row": true,
+      "note": "Enclosure only, 25.5 min; the README's CPU and GPU rows. The newest episode was 30.1 min, over the short tier, so this one is pinned by guid"
+    },
+    {
+      "id": "lex-497",
+      "kind": "feed",
+      "source": "https://lexfridman.com/feed/podcast/",
+      "episode": "https://lexfridman.com/?p=6457",
+      "license": {
+        "name": "No licence stated in the feed; fetched for private evaluation, not redistributed",
+        "source_url": "https://lexfridman.com/feed/podcast/"
+      },
+      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": null, "duration_s": 10912.0, "chapters": false},
+      "tier": "long",
+      "diarize": false,
+      "readme_row": false,
+      "note": "#497, 3 h 2 min, enclosure only. Many items in this feed carry no itunes:duration; this one does"
+    },
+    {
+      "id": "changelog-2816",
+      "kind": "feed",
+      "source": "https://changelog.com/podcast/feed",
+      "episode": "changelog.com/16/2816",
+      "license": {
+        "name": "All rights reserved (feed copyright); fetched for private evaluation, not redistributed",
+        "source_url": "https://changelog.com/podcast/feed"
+      },
+      "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": null, "duration_s": 384.0, "chapters": false},
+      "tier": "short",
+      "diarize": false,
+      "readme_row": false,
+      "note": "html-only transcript tags: correctly skipped, so has_transcript is false although a transcript tag exists"
+    }
+  ]
+}

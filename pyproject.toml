@@ -68,6 +68,7 @@ src_paths = ["src", "tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 markers = [
   "integration: real model / real stdio, no network (deselected by default)",
   "diarize: needs the diarize extra and a Hugging Face token (deselected by default)",

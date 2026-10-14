@@ -23,6 +23,11 @@ build/
 # Benchmark output (scripts/bench.py)
 bench.md
 
+# Evaluation artefacts (evals/): generated media, references, results
+evals/media/
+evals/refs/
+evals/results/
+
 # Claude Code session state
 .claude/scheduled_tasks.lock
 .claude/settings.local.json
