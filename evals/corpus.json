@@ -236,7 +236,7 @@
       },
       "expect": {"captions": "none", "transcript_tag": false, "language": "en", "speakers": 1, "duration_s": 526.0, "chapters": false},
       "tier": "short",
-      "diarize": false,
+      "diarize": true,
       "readme_row": false,
       "note": "One speaker, technical vocabulary, a 20 s silent gap mid-way."
     },
