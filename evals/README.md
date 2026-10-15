@@ -18,13 +18,14 @@ uv run python -m evals.build_corpus
 uv run python -m evals.make_tts
 uv run python -m evals.oracle
 uv run python -m evals.run
+uv run python -m evals.score
 ```
 
 In order: generate the local media and validate the manifest against the live sources;
 synthesise the TTS dialogues (each turn is cached, so a re-run never re-bills); download
 each URL and feed entry's audio once into `evals/media/cache/` and write the `large-v3`
-references; run the matrix. Each has `--help`; the first three have a `--check` or
-`--validate` that only verifies what exists.
+references; run the matrix; score it. Each has `--help`, and each but the runner has a
+`--check` or `--validate` that only verifies what exists.
 
 ## The matrix
 
@@ -95,3 +96,65 @@ Statuses:
   another episode than the pinned guid).
 - `skipped` — not run: `no token` (diarize without a Hugging Face token) or `no media` (TTS
   audio not synthesised).
+
+## Scores
+
+`python -m evals.score` writes `<out>/scores.jsonl`, one row per cell: `cell_id`,
+`cell_digest` (of the cells row it scored), the metrics, `pass` (`null` on skipped cells) and
+`fails`, the names of the rules the cell broke. `--check` replays both files: it fails on an
+empty `cells.jsonl`, an unscored or stale row, a crash, a skip for any reason but a missing
+token, and any real-path cell that did not pass. Other failing cells are findings, not
+check failures.
+
+The reference is the TTS script for TTS entries and the `large-v3` oracle for the rest.
+Tokens are lowercased with punctuation, symbols and the fillers `uh`, `um`, `hmm`, `mm`,
+`mhm`, `mmm` removed (the set Whisper's own English normaliser ignores; `wer_raw` keeps
+them); numbers are not mapped to words, so `1960` and `nineteen sixty` differ.
+
+| Metric | Meaning |
+|--------|---------|
+| `wer`, `wer_raw` | Word error rate on normalised tokens, and on raw whitespace tokens |
+| `cer` | Character error rate on the normalised text |
+| `subs`, `dels`, `ins` | Edit counts behind `wer` |
+| `ref_tokens`, `hyp_tokens`, `length_ratio` | Normalised token counts and their ratio |
+| `drift_level`, `drift_median_s`, `drift_p95_s`, `drift_pairs` | \|Δstart\| at each reference segment's first word, where it matched: `word` level against TTS turn starts (exact), `segment` level against the oracle |
+| `drift_bias_s` | Signed median Δstart; negative means the transcript starts words early |
+| `drift_shifted` | The 3 h loop only: pairs the alignment matched one repeat away (identical text, equal cost), folded back into ±half a repeat before the median |
+| `captions_coverage` | Whisper cells on entries with a captions or transcript-tag reference: transcript words over reference words |
+| `asr_drift_*` | The same over every matched word against an auto-captioned video's own word timings (Whisper cells on `asr` entries) |
+| `repeat_excess` | Share of 4-grams occurring three or more times, minus the same share in the reference |
+| `language` | The transcript's language |
+| `speaker_accuracy`, `turns_missed`, `ref_turn_changes`, `hyp_speakers` | Diarize cells on TTS entries: word agreement under the best label mapping, speaker changes not matched within 1 s |
+
+| Rule | Applies to | Fails when |
+|------|-----------|------------|
+| `status` | every cell | `crash`, `fail` or `error`, except a no-speech error on silence or the 0.6 s clip |
+| `silence` | `silence-30s` | any word comes out |
+| `language` | all but `tiny` | the transcript names another language than the manifest |
+| `length` | Whisper cells but `tiny` | `length_ratio` outside 0.8–1.2 |
+| `repeats` | Whisper cells but `tiny` | `repeat_excess` above 0.02 |
+| `wer` | Whisper on cached audio | above 0.10 (`turbo`), 0.15 (`small`), 0.20 (`base`) |
+| `coverage` | Whisper on cached audio with a captions reference | `captions_coverage` below 0.8 |
+| `drift` | Whisper on cached audio | median above 0.2 s (`word`) or 0.5 s (`segment`) |
+| `asr_drift` | Whisper on cached audio, `asr` entries | median above 0.2 s |
+| `speakers` | diarize cells on TTS entries | `speaker_accuracy` below 0.90 |
+
+`tiny` and captions cells are reported, not judged on quality: captions against the oracle
+measure the captions-first promise, which has no threshold. Real-path cells are judged on
+status, length, repeats and language only, because a feed can splice different ads into each
+download; their text and timing are judged on the cached-audio cells. The 0.6 s clip is
+shorter than a VAD window and only has to not crash.
+
+Thresholds were first values, revisited once after the first full run (Decision 10):
+
+- `segment` drift 0.3 → 0.5 s. The oracle starts words early itself: `small`, within 0.1 s
+  of the exact TTS turn starts, measures 0.32–0.36 s against it on TED.
+- `coverage` added. The oracle runs through the product's VAD, so speech the VAD drops is
+  missing from both sides and WER cannot see it; the captions reference is independent.
+  It is one-sided because a feed's audio can carry ads its transcript does not.
+- `word` drift stays at 0.2 s: `turbo` starts turn-initial words 0.15–0.26 s early, where
+  `base` and `small` are within 0.1 s. Citations render whole seconds, so this shows in
+  SRT/VTT, not in `[HH:MM:SS]` stamps.
+- Fillers dropped from normalised tokens. `turbo` writes them verbatim and the oracle
+  mostly does not: 151 of the 728 insertions on `pc20-269`, none in runs, which put that
+  cell at 0.1004 against the 0.10 bar for style rather than error (0.088 without).
