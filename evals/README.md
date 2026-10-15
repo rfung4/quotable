@@ -19,12 +19,13 @@ uv run python -m evals.make_tts
 uv run python -m evals.oracle
 uv run python -m evals.run
 uv run python -m evals.score
+uv run python -m evals.scenarios
 ```
 
 In order: generate the local media and validate the manifest against the live sources;
 synthesise the TTS dialogues (each turn is cached, so a re-run never re-bills); download
 each URL and feed entry's audio once into `evals/media/cache/` and write the `large-v3`
-references; run the matrix; score it. Each has `--help`, and each but the runner has a
+references; run the matrix; score it; run the long-run scenarios on an idle GPU. Each has `--help`, and each but the runner has a
 `--check` or `--validate` that only verifies what exists.
 
 ## The matrix
@@ -158,3 +159,22 @@ Thresholds were first values, revisited once after the first full run (Decision 
 - Fillers dropped from normalised tokens. `turbo` writes them verbatim and the oracle
   mostly does not: 151 of the 728 insertions on `pc20-269`, none in runs, which put that
   cell at 0.1004 against the 0.10 bar for style rather than error (0.088 without).
+
+## Scenarios
+
+`python -m evals.scenarios` (about 30 min on an idle GPU) writes `<out>/scenarios.json`, a
+`pass` and the measured numbers per scenario; `--check` replays it. On `lex-497` (cached
+audio) and `jfk-loop-3h`, `turbo` · `cuda`, each in its own output directory:
+
+| Scenario | Passes when |
+|----------|-------------|
+| `straight` | One uninterrupted run yields segments with no CUDA fallback |
+| `memory` | RSS and VRAM, sampled every 30 s during `straight`, grow no more than 10 % from the first sample after the first segment to the end |
+| `cancel_resume` | Cancelled once 600 s are done: the partial file has segments, the variant lock is free, the next call starts at or after 600 s, and the text past 600 s is within WER 0.05 of `straight` (provisional, Decision 10) |
+| `paging` | Offset pages join to the full text exactly; 600 s window pages join to the overlapping segments exactly, no segment is in no window, and only segments straddling a boundary are in two |
+
+`darknet-179` adds `feed_transcript`: live feed and guid, `mode=auto`, with the enclosure
+download made to raise; the transcript-tag path must be taken.
+
+`memory` measures growth, not peak. The peak comes before the first segment (the
+spectrogram of the whole file is built at once) and is the matrix row's `max_rss_mb`.
