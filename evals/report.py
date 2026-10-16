@@ -41,10 +41,9 @@ KINDS = (
     ("feed", "Feeds"),
 )
 # Cells the per-model summary leaves out: short clips (load dominates, and the eleven JFK
-# variants are one 11 s recording), the synthetic 3 h repeat, and the entry the VAD truncates
-# (its WER against an oracle that shares the loss says nothing).
+# variants are one 11 s recording) and the synthetic 3 h repeat.
 SUMMARY_MIN_AUDIO_S = 200
-SUMMARY_EXCLUDE = frozenset({"jfk-loop-3h", "nasa-artemis-call"})
+SUMMARY_EXCLUDE = frozenset({"jfk-loop-3h"})
 README_WHISPER = (("base", "cpu"), ("turbo", "cuda"))
 PASS = {True: "pass", False: "FAIL", None: "—"}
 
