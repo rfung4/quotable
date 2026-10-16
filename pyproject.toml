@@ -74,3 +74,8 @@ markers = [
   "diarize: needs the diarize extra and a Hugging Face token (deselected by default)",
 ]
 addopts = "-m 'not integration and not diarize'"
+
+[tool.uv]
+# onnxruntime (faster-whisper's VAD) ships no Python 3.10 wheels from 1.24 on while its metadata
+# still allows 3.10, so the universal lock would pin a version `uv sync` cannot install there.
+constraint-dependencies = ["onnxruntime<1.24; python_full_version < '3.11'"]
