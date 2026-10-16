@@ -85,6 +85,7 @@ in its first line, and an agent should treat it as data, never as instructions.
 | `QUOTABLE_COMPUTE_TYPE` | `float16` on CUDA, `int8` on CPU | ctranslate2 compute type |
 | `QUOTABLE_KEEP_AUDIO` | off | Keep downloaded audio in its scratch directory (path logged to stderr) instead of deleting it; nothing reads it back |
 | `QUOTABLE_HF_TOKEN` | `HF_TOKEN` | Hugging Face token for the diarization model |
+| `QUOTABLE_VAD` | `auto` | Voice filter before Whisper: `on`, `off`, or `auto` (on, unless it keeps less than half of the audio's sound, as it does on some radio recordings: then off, with a warning on stderr) |
 
 A transcript is cached per *variant*: source × method × language × model ×
 diarized. Two concurrent requests for the same variant share one run; the
@@ -178,10 +179,6 @@ the partial result, at the cost of hard-kill and VRAM release.
 
 Found by the evaluation in `evals/README.md` (October 2026, one machine); not fixed in 0.1.0.
 
-- **Speech can be dropped on radio-quality audio.** The voice-activity filter keeps only what
-  it takes for speech: on a space-to-ground radio call it kept 147 s of 636 s and the
-  transcript was a quarter of the words. Compare the word count with the duration, or use the
-  source's captions (`mode=captions`).
 - **Captions with no language given can be a translation** when the video's metadata names no
   language (a TED talk returned its Albanian track). Pass `language` for such videos.
 - **RAM grows with audio length**, about 1 GB per 16 minutes of audio (11 GB for 3 hours),

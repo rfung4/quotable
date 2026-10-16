@@ -30,6 +30,7 @@ class FWSegment:
 class FWInfo:
     language: str = "en"
     duration: float = 10.0
+    duration_after_vad: float = 10.0
 
 
 SEGMENTS = [
@@ -45,6 +46,7 @@ class FakeModel:
     calls: list[dict] = []
     fail_load_on: set[str] = set()
     fail_first_segment_on: set[str] = set()
+    after_vad = 10.0  # what the VAD keeps on a vad_filter=True call
     load_error = RuntimeError("CUDA failed with error no CUDA-capable device is detected")
 
     def __init__(self, name, device, compute_type):
@@ -61,23 +63,25 @@ class FakeModel:
                 raise RuntimeError("Unable to load any of {libcudnn_ops.so.9.1.0, libcudnn_ops.so}")
             yield from SEGMENTS
 
-        return gen(), FWInfo()
+        kept = FakeModel.after_vad if kwargs.get("vad_filter") else 10.0
+        return gen(), FWInfo(duration_after_vad=kept)
 
 
 @pytest.fixture(autouse=True)
 def fake_whisper(monkeypatch):
     FakeModel.built, FakeModel.calls = [], []
     FakeModel.fail_load_on, FakeModel.fail_first_segment_on = set(), set()
+    FakeModel.after_vad = 10.0
     monkeypatch.setattr(tx, "_whisper_model_cls", lambda: FakeModel)
     monkeypatch.setattr(tx, "_decode", lambda path: np.zeros(SR * 10, dtype=np.float32))
     monkeypatch.setattr(tx, "_model", None)
     monkeypatch.setattr(tx, "_cuda_broken", False)
 
 
-def _settings(device="cpu", model="base", compute_type=None) -> Settings:
+def _settings(device="cpu", model="base", compute_type=None, vad="auto") -> Settings:
     compute_type = compute_type or ("float16" if device == "cuda" else "int8")
     return Settings(
-        output_dir=Path("/tmp/q"), model=model, device=device, compute_type=compute_type
+        output_dir=Path("/tmp/q"), model=model, device=device, compute_type=compute_type, vad=vad
     )
 
 
@@ -198,3 +202,96 @@ def test_lock_released_when_start_fails(monkeypatch):
     with pytest.raises(TranscriptionError):
         _run(_settings())
     assert not tx.INFERENCE_LOCK.locked()
+
+
+# --- the VAD guard ----------------------------------------------------------------------
+
+
+@pytest.fixture
+def loud_minute(monkeypatch):
+    """60 s of steady sound (well above -50 dBFS): every frame is loud."""
+    tone = 0.1 * np.sin(2 * np.pi * 220 * np.arange(SR * 60) / SR).astype(np.float32)
+    monkeypatch.setattr(tx, "_decode", lambda path: tone)
+
+
+def test_loud_seconds_counts_frames_above_the_floor():
+    quiet = np.full(SR * 4, 10 ** (-60 / 20), dtype=np.float32)  # -60 dBFS
+    loud = np.full(SR * 2, 10 ** (-30 / 20), dtype=np.float32)  # -30 dBFS
+    assert tx.loud_seconds(np.concatenate([quiet, loud])) == pytest.approx(2.0, abs=0.03)
+    assert tx.loud_seconds(np.zeros(100, dtype=np.float32)) == 0.0
+
+
+def test_vad_drops_sound_needs_enough_sound_and_a_low_share():
+    assert tx.vad_drops_sound(147, 501)  # the radio call: 0.29 of the sound kept
+    assert not tx.vad_drops_sound(369, 357)  # speech: the VAD pads past the loud frames
+    assert not tx.vad_drops_sound(0, 0)  # silence is the store's to refuse, not the guard's
+    assert not tx.vad_drops_sound(1, 20)  # under MIN_LOUD_S: too little to judge
+
+
+def test_guard_reruns_without_vad_when_the_vad_drops_most_of_the_sound(loud_minute, capsys):
+    FakeModel.after_vad = 15.0  # 15 s kept of 60 s of sound
+    run, segs = _run(_settings())
+    assert [c["vad_filter"] for c in FakeModel.calls] == [True, False]
+    assert run.vad is False and segs
+    err = capsys.readouterr().err
+    assert "kept 15 s of 60 s of sound" in err and "QUOTABLE_VAD=on" in err
+
+
+def test_guard_keeps_vad_when_it_keeps_the_sound(loud_minute, capsys):
+    FakeModel.after_vad = 58.0
+    run, _ = _run(_settings())
+    assert [c["vad_filter"] for c in FakeModel.calls] == [True]
+    assert run.vad is True and capsys.readouterr().err == ""
+
+
+def test_guard_leaves_silence_to_the_vad():
+    FakeModel.after_vad = 0.0  # zeros from the default _decode fake
+    run, _ = _run(_settings())
+    assert [c["vad_filter"] for c in FakeModel.calls] == [True]
+    assert run.vad is True
+
+
+@pytest.mark.parametrize(("mode", "expected"), [("on", [True]), ("off", [False])])
+def test_quotable_vad_on_and_off_skip_the_guard(loud_minute, capsys, mode, expected):
+    FakeModel.after_vad = 15.0
+    run, _ = _run(_settings(vad=mode))
+    assert [c["vad_filter"] for c in FakeModel.calls] == expected
+    assert run.vad is (mode == "on") and capsys.readouterr().err == ""
+
+
+def test_resume_without_vad_decodes_from_the_resume_point(loud_minute, monkeypatch):
+    import faster_whisper.vad
+
+    def no_vad(*a, **k):
+        raise AssertionError("QUOTABLE_VAD=off must not run the VAD")
+
+    monkeypatch.setattr(faster_whisper.vad, "get_speech_timestamps", no_vad)
+    _run(_settings(vad="off"), start_s=12.0)
+    (call,) = FakeModel.calls
+    assert call["clip_timestamps"] == [12.0] and call["vad_filter"] is False
+
+
+def test_resume_applies_the_guard_to_the_whole_file(loud_minute, monkeypatch, capsys):
+    import faster_whisper.vad
+
+    monkeypatch.setattr(  # 10 s of speech found in 60 s of sound: the same guard trips
+        faster_whisper.vad,
+        "get_speech_timestamps",
+        lambda audio, *a, **k: [{"start": 0, "end": 10 * SR}],
+    )
+    run, _ = _run(_settings(), start_s=20.0)
+    (call,) = FakeModel.calls
+    assert call["clip_timestamps"] == [20.0]  # not [] (silence after 20 s): VAD is off
+    assert run.vad is False and "QUOTABLE_VAD=on" in capsys.readouterr().err
+
+
+def test_cpu_fallback_keeps_the_guards_decision(loud_minute):
+    FakeModel.after_vad = 15.0
+    FakeModel.fail_first_segment_on = {"cuda"}
+    run, segs = _run(_settings(device="cuda", model="turbo"))
+    assert [(c["device"], c["vad_filter"]) for c in FakeModel.calls] == [
+        ("cuda", True),
+        ("cuda", False),
+        ("cpu", False),
+    ]
+    assert segs

@@ -25,6 +25,7 @@ def test_cpu_defaults_when_no_gpu():
     assert (s.device, s.model, s.compute_type) == ("cpu", "base", "int8")
     assert s.output_dir == Path("/data/quotable")
     assert s.keep_audio is False and s.hf_token is None
+    assert s.vad == "auto"
 
 
 def test_cuda_defaults_when_gpu_present():
@@ -40,12 +41,14 @@ def test_env_overrides():
         "QUOTABLE_OUTPUT_DIR": "/tmp/q",
         "QUOTABLE_KEEP_AUDIO": "1",
         "HF_TOKEN": "hf_plain",
+        "QUOTABLE_VAD": " Off ",
     }
     s = Settings.from_env(env, cuda_count=_one_gpu)
     assert (s.device, s.model, s.compute_type) == ("cpu", "tiny", "float32")
     assert s.output_dir == Path("/tmp/q")
     assert s.keep_audio is True
     assert s.hf_token == "hf_plain"
+    assert s.vad == "off"
 
 
 def test_quotable_token_wins_over_hf_token_and_is_not_in_repr():
@@ -65,6 +68,11 @@ def test_xdg_data_home_unset_falls_back_to_home(monkeypatch):
 def test_invalid_device_rejected():
     with pytest.raises(ValueError, match="QUOTABLE_DEVICE"):
         Settings.from_env({"QUOTABLE_DEVICE": "tpu"})
+
+
+def test_invalid_vad_mode_rejected():
+    with pytest.raises(ValueError, match="QUOTABLE_VAD='maybe'.*auto, on, off"):
+        Settings.from_env({"QUOTABLE_VAD": "maybe", "QUOTABLE_DEVICE": "cpu"})
 
 
 def test_errors_carry_fix_hint_and_override():

@@ -19,6 +19,14 @@ from quotable.models import Segment, TranscriptionError, Word
 SAMPLE_RATE = 16000
 _CUDA_HINTS = ("cuda", "cudnn", "cublas", "libcu", "gpu")
 
+# The VAD guard (QUOTABLE_VAD=auto). Silero keeps 1.0–1.4× the audio above -50 dBFS on every
+# speech recording in the eval corpus (it pads its chunks), and 0.29× on a space-to-ground radio
+# call whose speech it mostly drops. Below MIN_VAD_SHARE the run goes on without VAD.
+LOUD_DBFS = -50.0
+LOUD_FRAME = 480  # 30 ms
+MIN_LOUD_S = 30.0  # too little sound to judge the VAD by
+MIN_VAD_SHARE = 0.5
+
 INFERENCE_LOCK = threading.Lock()
 _MODEL_LOCK = threading.Lock()
 _model: tuple[tuple[str, str, str], Any] | None = None
@@ -82,22 +90,55 @@ def _mark_cuda_broken() -> None:
         _model = None
 
 
-def resume_clips(audio: Any, start_s: float) -> list[float]:
+def speech_chunks(audio: Any) -> list[tuple[float, float]]:
+    """Silero's speech chunks in seconds, with faster-whisper's default VAD options."""
+    from faster_whisper.vad import get_speech_timestamps
+
+    return [
+        (c["start"] / SAMPLE_RATE, c["end"] / SAMPLE_RATE) for c in get_speech_timestamps(audio)
+    ]
+
+
+def resume_clips(
+    audio: Any, start_s: float, chunks: list[tuple[float, float]] | None = None
+) -> list[float]:
     """VAD speech chunks at or after ``start_s`` as a flat ``[s1, e1, s2, e2, …]``.
 
     faster-whisper ignores ``vad_filter`` whenever ``clip_timestamps`` is set, so a bare
     ``[start_s]`` would decode silence unfiltered (and hallucinate). Running VAD ourselves
     and passing only speech keeps a resumed run equivalent to a fresh one.
     """
-    from faster_whisper.vad import get_speech_timestamps
-
     clips: list[float] = []
-    for chunk in get_speech_timestamps(audio):
-        start, end = chunk["start"] / SAMPLE_RATE, chunk["end"] / SAMPLE_RATE
+    for start, end in speech_chunks(audio) if chunks is None else chunks:
         if end <= start_s:
             continue
         clips += [max(start, start_s), end]
     return clips
+
+
+def loud_seconds(audio: Any) -> float:
+    """Seconds of ``audio`` in 30 ms frames whose RMS is above ``LOUD_DBFS``."""
+    import numpy as np
+
+    n = len(audio) // LOUD_FRAME
+    if n == 0:
+        return 0.0
+    frames = np.asarray(audio[: n * LOUD_FRAME], dtype=np.float32).reshape(n, LOUD_FRAME)
+    power = (frames * frames).mean(axis=1)
+    loud = int((power > 10 ** (LOUD_DBFS / 10)).sum())
+    return loud * LOUD_FRAME / SAMPLE_RATE
+
+
+def vad_drops_sound(vad_s: float, loud_s: float) -> bool:
+    """True when the VAD kept far less than the audio's sound: it is missing speech."""
+    return loud_s >= MIN_LOUD_S and vad_s < MIN_VAD_SHARE * loud_s
+
+
+def _vad_off_warning(vad_s: float, loud_s: float) -> str:
+    return (
+        f"the voice filter kept {vad_s:.0f} s of {loud_s:.0f} s of sound, so it is likely "
+        "missing speech; transcribing without it (QUOTABLE_VAD=on keeps it)."
+    )
 
 
 def _decode(path: Path):
@@ -126,24 +167,49 @@ class WhisperRun:
         self._segments: Iterator[Any] | None = None
         self._audio: Any = None
         self._yielded = False
+        # None until decided; then whether this run filters with the VAD. A CPU fallback
+        # restarts the run and keeps the decision.
+        self.vad: bool | None = None if settings.vad == "auto" else settings.vad == "on"
+
+    def _guard(self, vad_s: float) -> bool:
+        """Decide the VAD for ``auto`` from the seconds it kept; warn when it is dropped."""
+        loud_s = loud_seconds(self._audio)
+        if vad_drops_sound(vad_s, loud_s):
+            _warn(_vad_off_warning(vad_s, loud_s))
+            return False
+        return True
 
     def _start(self, *, force_cpu: bool = False) -> None:
         model = get_model(self.settings, force_cpu=force_cpu)
-        kwargs: dict[str, Any] = {
-            "language": self.requested_language,
-            "word_timestamps": True,
-            "vad_filter": True,
-        }
+        kwargs: dict[str, Any] = {"language": self.requested_language, "word_timestamps": True}
         if self._audio is None:
             self._audio = _decode(self.audio_path)
         if self.start_s > 0:
-            clips = resume_clips(self._audio, self.start_s)
+            if self.vad is False:
+                clips = [self.start_s]
+            else:
+                chunks = speech_chunks(self._audio)
+                if self.vad is None:
+                    self.vad = self._guard(sum(end - start for start, end in chunks))
+                clips = (
+                    resume_clips(self._audio, self.start_s, chunks) if self.vad else [self.start_s]
+                )
             if not clips:  # nothing but silence after the resume point
                 self.duration = len(self._audio) / SAMPLE_RATE
                 self._segments = iter(())
                 return
             kwargs["clip_timestamps"] = clips
-        segments, info = model.transcribe(self._audio, **kwargs)
+            segments, info = model.transcribe(self._audio, vad_filter=False, **kwargs)
+        else:
+            segments, info = model.transcribe(
+                self._audio, vad_filter=self.vad is not False, **kwargs
+            )
+            if self.vad is None:
+                # faster-whisper runs the VAD before it decodes anything, so the guard reads
+                # what it kept for free and only a tripped guard pays for a second call.
+                self.vad = self._guard(info.duration_after_vad)
+                if not self.vad:
+                    segments, info = model.transcribe(self._audio, vad_filter=False, **kwargs)
         self._segments = iter(segments)
         self.language = info.language
         self.duration = info.duration

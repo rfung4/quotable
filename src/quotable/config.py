@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 DEVICES = ("auto", "cpu", "cuda")
+VAD_MODES = ("auto", "on", "off")
 _TRUTHY = {"1", "true", "yes", "on"}
 
 
@@ -33,6 +34,7 @@ class Settings:
     compute_type: str
     keep_audio: bool = False
     hf_token: str | None = field(default=None, repr=False)
+    vad: str = "auto"
 
     @classmethod
     def from_env(
@@ -50,6 +52,10 @@ class Settings:
         if device == "auto":
             device = "cuda" if cuda_count() > 0 else "cpu"
 
+        vad = (env.get("QUOTABLE_VAD") or "auto").strip().lower()
+        if vad not in VAD_MODES:
+            raise ValueError(f"QUOTABLE_VAD={vad!r} is invalid; use one of {', '.join(VAD_MODES)}")
+
         on_cuda = device == "cuda"
         model = env.get("QUOTABLE_MODEL") or ("turbo" if on_cuda else "base")
         compute_type = env.get("QUOTABLE_COMPUTE_TYPE") or ("float16" if on_cuda else "int8")
@@ -62,4 +68,5 @@ class Settings:
             compute_type=compute_type,
             keep_audio=env.get("QUOTABLE_KEEP_AUDIO", "").strip().lower() in _TRUTHY,
             hf_token=env.get("QUOTABLE_HF_TOKEN") or env.get("HF_TOKEN") or None,
+            vad=vad,
         )
