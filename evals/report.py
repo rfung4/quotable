@@ -9,7 +9,7 @@ carries a ``<!-- MERGE_START(TABLES) -->`` block, that block is replaced by the 
 the judgment around it is written by hand (Decision 11). ``--readme`` rewrites the README's
 Benchmark section from the manifest's ``readme_row`` entries (Decision 13). ``--check``
 replays: the report names every cell and its tables are current, the README has no pending
-benchmark row, and nothing tracked outside the dev docs mentions ``bench.py``.
+benchmark row, and nothing tracked outside the dev docs mentions the deleted benchmark script.
 """
 
 from __future__ import annotations
@@ -666,9 +666,12 @@ def update_doc(doc: Path, tables: str) -> bool:
 # --- check ------------------------------------------------------------------------------
 
 
+OLD_SCRIPT = "bench" + ".py"  # spelled in two parts so this file does not match its own check
+
+
 def _bench_mentions() -> list[str]:
     out = subprocess.run(
-        ["git", "grep", "-l", "bench.py", "--", ".", ":!docs/development", ":!docs/.archive"],
+        ["git", "grep", "-l", OLD_SCRIPT, "--", ".", ":!docs/development", ":!docs/.archive"],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -715,7 +718,7 @@ def check(data: Data, doc: Path = DOC, readme: Path = README) -> list[str]:
                 problems.append(f"{readme.name}: a benchmark row is still pending")
         if "TODO(bench)" in text:
             problems.append(f"{readme.name}: TODO(bench) is still there")
-    problems += [f"{path} mentions bench.py" for path in _bench_mentions()]
+    problems += [f"{path} mentions {OLD_SCRIPT}" for path in _bench_mentions()]
     return problems
 
 

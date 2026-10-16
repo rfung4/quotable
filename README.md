@@ -174,6 +174,29 @@ half. The main trade-off against yueying's child-process-per-job design: one
 warm model in-process saves a multi-second load per job and lets a cancel keep
 the partial result, at the cost of hard-kill and VRAM release.
 
+## Known issues
+
+Found by the evaluation in `evals/README.md` (October 2026, one machine); not fixed in 0.1.0.
+
+- **Speech can be dropped on radio-quality audio.** The voice-activity filter keeps only what
+  it takes for speech: on a space-to-ground radio call it kept 147 s of 636 s and the
+  transcript was a quarter of the words. Compare the word count with the duration, or use the
+  source's captions (`mode=captions`).
+- **Captions with no language given can be a translation** when the video's metadata names no
+  language (a TED talk returned its Albanian track). Pass `language` for such videos.
+- **RAM grows with audio length**, about 1 GB per 16 minutes of audio (11 GB for 3 hours),
+  because the whole file's spectrogram is built at once. Keep long recordings under what your
+  RAM allows.
+- **A feed's own transcript carries the publisher's timestamps.** Ads inserted into your
+  download shift the audio (121 to 193 s on two Darknet Diaries episodes); `mode=whisper`
+  stamps what you downloaded.
+- **`turbo` starts words 0.15 to 0.26 s early** and splits some produced podcasts into
+  very short lines. It shows in SRT/VTT, not in `[hh:mm:ss]` citations; `small` is tighter.
+- **YouTube sometimes answers 403.** The call fails with a typed error; call again.
+- **In Claude Code**, the third-party-content notice is only in the server instructions (the
+  client passes the model the structured result), `@`-mentioning a transcript does not attach
+  it, and a call longer than 120 s moves to a background task: the next call is a cache hit.
+
 ## Rights
 
 quotable processes what you point it at. You need the rights to the
