@@ -133,6 +133,11 @@ def _meta_ok(entry: dict[str, Any]) -> bool:
     return meta.get("model") == ORACLE_MODEL or "derived" in meta
 
 
+def _refuse_cpu() -> None:
+    if transcribe._cuda_broken:
+        raise RuntimeError("CUDA fell back to CPU; an oracle pass on CPU would take hours")
+
+
 def run_oracle(entry: dict[str, Any], path: Path) -> None:
     language = entry["expect"]["language"]
     with tempfile.TemporaryDirectory() as tmp:
@@ -145,15 +150,16 @@ def run_oracle(entry: dict[str, Any], path: Path) -> None:
         started, last_beat = time.monotonic(), 0.0
         segments = []
         with transcribe.transcribe_iter(path, language=language, settings=settings) as run:
+            _refuse_cpu()  # a load-time fallback is known before the first segment
             for seg in run:
+                _refuse_cpu()  # a first-segment fallback restarts the run on CPU
                 segments.append(seg)
                 if seg.end - last_beat >= HEARTBEAT_S:
                     last_beat = seg.end
                     print(f"  {entry['id']}: {seg.end / 60:.0f} min", flush=True)
             detected, duration = run.language, run.duration
         wall = time.monotonic() - started
-    if transcribe._cuda_broken:
-        raise RuntimeError("CUDA fell back to CPU; an oracle pass on CPU would take hours")
+    _refuse_cpu()
     transcript = Transcript(
         source_key=entry["id"],
         variant=VARIANT,

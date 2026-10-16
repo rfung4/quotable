@@ -171,6 +171,19 @@ def test_scenarios_and_checklist_render_pass_and_fail(data):
     assert "Round trip on the built wheel: **ok**" in mcp
 
 
+def test_memory_row_without_a_vram_reading_renders_a_dash(results):
+    # growth() is None with no nvidia-smi reading for the process (CPU run, no GPU)
+    memory = {"pass": True, "rss_growth": 0.01, "vram_growth": None, "samples": []}
+    (results / "scenarios.json").write_text(json.dumps({"clip": {"memory": memory}}))
+    assert "RSS +1.0%, VRAM — from" in rp.scenarios_table(rp.Data(results, ENTRIES))
+
+
+def test_gpu_is_none_when_nvidia_smi_reaches_no_gpu(monkeypatch):
+    done = rp.subprocess.CompletedProcess([], 6, stdout="No devices were found\n", stderr="")
+    monkeypatch.setattr(rp.subprocess, "run", lambda *a, **k: done)
+    assert rp._gpu() is None
+
+
 # --- README -----------------------------------------------------------------------------
 
 
@@ -209,6 +222,15 @@ def test_update_doc_replaces_the_block_and_check_passes(data, tmp_path):
     readme.write_text("## Benchmark\n\nfine\n")
     assert rp.update_doc(doc, rp.render(data))
     assert doc.read_text().startswith("# Report\n\nprose\n\n")
+    assert rp.check(data, doc, readme) == []
+
+
+def test_check_ignores_the_hardware_line(data, tmp_path, monkeypatch):
+    doc = _doc(tmp_path)
+    readme = tmp_path / "README.md"
+    readme.write_text("## Benchmark\n\nfine\n")
+    rp.update_doc(doc, rp.render(data))
+    monkeypatch.setattr(rp, "hardware_line", lambda short=False: "another box, new driver")
     assert rp.check(data, doc, readme) == []
 
 

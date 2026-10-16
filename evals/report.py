@@ -105,19 +105,20 @@ def _first_match(path: str, pattern: str) -> str | None:
 
 def _gpu() -> str | None:
     try:
-        out = subprocess.run(
+        done = subprocess.run(
             ["nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader"],
             capture_output=True,
             text=True,
             stdin=subprocess.DEVNULL,
             timeout=10,
             check=False,
-        ).stdout.strip()
+        )
     except (OSError, subprocess.SubprocessError):
         return None
-    if not out:
+    fields = [p.strip() for p in done.stdout.strip().split("\n")[0].split(",")]
+    if done.returncode != 0 or len(fields) != 3:  # e.g. "No devices were found"
         return None
-    name, mem, driver = (p.strip() for p in out.splitlines()[0].split(","))
+    name, mem, driver = fields
     gib = round(int(mem.split()[0]) / 1024) if mem.split()[0].isdigit() else mem
     return f"{name} ({gib} GB, driver {driver})"
 
@@ -170,6 +171,10 @@ def _x(value: Any) -> str:
 
 def _mb(value: Any) -> str:
     return "—" if value is None else f"{value:,.0f} MB".replace(",", " ")
+
+
+def _pct(value: Any) -> str:
+    return "—" if value is None else f"{value:+.1%}"
 
 
 def _minutes(seconds: Any) -> str:
@@ -432,7 +437,7 @@ def _scenario_numbers(name: str, record: dict[str, Any]) -> str:
     if name == "memory":
         first = (r.get("samples") or [{}])[0]
         return (
-            f"RSS {r.get('rss_growth', 0):+.1%}, VRAM {r.get('vram_growth', 0):+.1%} from "
+            f"RSS {_pct(r.get('rss_growth'))}, VRAM {_pct(r.get('vram_growth'))} from "
             f"{_s(r.get('baseline_after_s'))}; first sample {_mb(first.get('rss_mb'))} RSS"
         )
     if name == "cancel_resume":
@@ -525,6 +530,12 @@ def mcp_section(data: Data) -> str:
     else:
         lines += ["", "In-client checklist: not sat."]
     return "\n".join(lines)
+
+
+def _results_part(rendered: str) -> str:
+    """The rendered tables without the first line, which describes the machine and the
+    results file's mtime, so --check does not go stale on a driver update or another box."""
+    return rendered.strip().partition("\n\n")[2]
 
 
 def render(data: Data) -> str:
@@ -699,7 +710,7 @@ def check(data: Data, doc: Path = DOC, readme: Path = README) -> list[str]:
         parts = _split_block(text)
         if parts is None:
             problems.append(f"{doc} has no {TABLES_START} … {TABLES_END} block")
-        elif parts[1].strip() != render(data).strip():
+        elif _results_part(parts[1]) != _results_part(render(data)):
             problems.append(f"{doc}: tables are stale (re-run python -m evals.report)")
         plain = text.replace("\\|", "|")
         problems += [

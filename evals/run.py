@@ -320,6 +320,11 @@ def run_cell(cell: Cell, out: Path) -> dict[str, Any]:
     # CPU without saying so, which would poison every number in a cuda row.
     if cell.device == "cuda" and transcribe._cuda_broken and row["status"] in ("ok", "error"):
         row.update(status="fail", reason="cuda_fallback")
+    # load_pipeline leaves pyannote on CPU without a word when torch sees no CUDA; pyannote
+    # sets ``device`` only when the pipeline is moved.
+    if cell.device == "cuda" and cell.diarize and row["status"] == "ok" and diarize._pipeline:
+        if getattr(getattr(diarize._pipeline[1], "device", None), "type", None) != "cuda":
+            row.update(status="fail", reason="cuda_fallback")
     return row
 
 

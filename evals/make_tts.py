@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -76,7 +77,7 @@ def synthesise(text: str, voice: str, key: str) -> bytes:
                 time.sleep(2 * attempt)
                 continue
             raise TtsError(f"OpenAI TTS returned HTTP {exc.code}: {detail[:300]}") from None
-        except (urllib.error.URLError, TimeoutError) as exc:
+        except (OSError, http.client.HTTPException) as exc:  # URLError, timeouts, cut streams
             if attempt < ATTEMPTS:
                 time.sleep(2 * attempt)
                 continue
