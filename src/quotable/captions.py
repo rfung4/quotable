@@ -59,12 +59,41 @@ def _candidates(tracks: dict[str, list[dict]], wanted: str | None) -> list[str]:
     return exact + base
 
 
+def _usable_manual(info: dict) -> list[str]:
+    manual: dict[str, list[dict]] = info.get("subtitles") or {}
+    prefer_json3 = info.get("extractor_key") == "Youtube"
+    return [k for k in _candidates(manual, None) if _best_format(manual[k], prefer_json3)]
+
+
+def unnamed_language(info: dict, language: str | None) -> bool:
+    """Several manual tracks and nothing names the video's language: any pick is a guess.
+
+    TED talks look like this: 43 manual tracks, ``language`` None, no ``-orig`` track. The
+    first track in dict order was Albanian, a translation returned as the talk.
+    """
+    return language is None and not info.get("language") and len(_usable_manual(info)) > 1
+
+
+def no_track_error(info: dict, language: str | None) -> NoCaptionsError:
+    if unnamed_language(info, language):
+        return NoCaptionsError(
+            f"The video has captions in {len(_usable_manual(info))} languages and names none "
+            "as its own, so none was picked (most would be translations).",
+            fix="Pass `language` (for example 'en') to choose a track, or use mode='auto' or "
+            "mode='whisper' to transcribe the audio.",
+        )
+    wanted = f" in {language!r}" if language else ""
+    return NoCaptionsError(f"No caption track{wanted} for this source.")
+
+
 def pick_track(info: dict, language: str | None = None) -> CaptionTrack | None:
     """Choose a caption track: requested language first, manual over automatic.
 
     With no language requested, manual subtitles in the video's language win, then any
     manual track, then the *original* automatic track. Automatic tracks in other languages
-    are machine translations and are only used when asked for by name.
+    are machine translations and are only used when asked for by name. When the video names
+    no language and has several manual tracks, none of them is chosen: one is the original
+    and the rest are translations, and nothing says which (``unnamed_language``).
     """
     prefer_json3 = info.get("extractor_key") == "Youtube"
     manual: dict[str, list[dict]] = info.get("subtitles") or {}
@@ -75,7 +104,7 @@ def pick_track(info: dict, language: str | None = None) -> CaptionTrack | None:
         ordered = [(k, manual[k], False) for k in _candidates(manual, language)]
         ordered += [(k, auto[k], True) for k in _candidates(auto, language)]
     else:
-        manual_keys = _candidates(manual, None)
+        manual_keys = [] if unnamed_language(info, None) else _candidates(manual, None)
         if video_lang:
             manual_keys.sort(key=lambda k: _base(k) != _base(video_lang))
         ordered = [(k, manual[k], False) for k in manual_keys]
@@ -97,8 +126,7 @@ def fetch(
     """Download and parse the chosen track through the ``YoutubeDL`` instance's opener."""
     track = pick_track(info, language)
     if track is None:
-        wanted = f" in {language!r}" if language else ""
-        raise NoCaptionsError(f"No caption track{wanted} for this source.")
+        raise no_track_error(info, language)
     if urlsplit(track.url).scheme not in ("http", "https"):
         raise NoCaptionsError(f"Caption track URL is not http(s): {urlsplit(track.url).scheme!r}.")
     try:

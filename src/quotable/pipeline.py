@@ -191,8 +191,7 @@ def _caption_plan(
         return ref.language or language, lambda: feeds.fetch_transcript(ep, language) or []
     track = captions.pick_track(src.info, language)
     if track is None:
-        wanted = f" in {language!r}" if language else ""
-        raise NoCaptionsError(f"No caption track{wanted} for this source.")
+        raise captions.no_track_error(src.info, language)
     return track.language, lambda: captions.fetch(src.ydl, src.info, language)[0]
 
 

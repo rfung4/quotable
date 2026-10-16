@@ -60,6 +60,10 @@ are produced. Failures are one stderr line with the fix, exit code 1.
 
 `mode` is `auto` (the source's own captions or feed transcript, else Whisper),
 `captions` (never run Whisper) or `whisper` (always transcribe the audio).
+When no `language` is given and a video carries captions in several languages
+without naming its own (TED talks do), no track is guessed, since most would be
+translations: `auto` transcribes the audio, `captions` fails with a hint to pass
+`language`.
 `episode` picks a feed episode by guid, 1-based index (1 = newest) or title words.
 
 Tool results are typed structured output plus a short text block. Failures
@@ -149,7 +153,7 @@ is a second call for the same variant.
 |---|---|---|---|---|---|---|---|
 | *Charles Ponzi's scheme (plus a new scam)* (podcast feed, 29.0 min) | base | cpu | 29.0 min | 0.9 s | 66.9 s | 26× | 0.02 s |
 | same episode | turbo | cuda | 29.0 min | 1.4 s | 40.5 s | 43× | 0.02 s |
-| *The power of believing that you can improve \| Carol Dweck \| TED* (YouTube, 10.4 min) | captions | - | 10.4 min | - | 3.6 s | 176× | 1.46 s |
+| *Lecture 1: Algorithmic Thinking, Peak Finding* (YouTube, 53.4 min) | captions | - | 53.4 min | - | 2.0 s | 1640× | 1.50 s |
 
 Fetched live from the feed, the `turbo` row took 44.5 s including the download.
 
@@ -179,8 +183,6 @@ the partial result, at the cost of hard-kill and VRAM release.
 
 Found by the evaluation in `evals/README.md` (October 2026, one machine); not fixed in 0.1.0.
 
-- **Captions with no language given can be a translation** when the video's metadata names no
-  language (a TED talk returned its Albanian track). Pass `language` for such videos.
 - **RAM grows with audio length**, about 1 GB per 16 minutes of audio (11 GB for 3 hours),
   because the whole file's spectrogram is built at once. Keep long recordings under what your
   RAM allows.

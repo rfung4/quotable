@@ -157,6 +157,12 @@ def check_youtube(entry: dict[str, Any]) -> list[str]:
     # The pipeline's own choice, not "subtitles is non-empty": a livestream carries only
     # live_chat there, which pick_track skips.
     track = captions.pick_track(info)
+    if expect.get("default_captions") == "refused":
+        # Nothing names the video's language, so the default choice must be no track; the
+        # kind shipped is what asking for the language gets.
+        if track is not None:
+            problems.append(f"default captions track {track.language!r} chosen, expected none")
+        track = captions.pick_track(info, expect["language"])
     kind = "none" if track is None else ("asr" if track.auto else "manual")
     if kind != expect["captions"]:
         problems.append(f"captions are {kind}, expected {expect['captions']}")

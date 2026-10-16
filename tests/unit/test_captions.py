@@ -91,6 +91,36 @@ def test_video_language_finds_automatic_track_without_orig_label():
     assert pick_track(info).language == "en"
 
 
+def test_unnamed_language_with_several_manual_tracks_picks_none():
+    # TED: manual tracks in dict order, the first a translation; no video language, no -orig.
+    info = _yt(subtitles={"sq": _fmts("json3"), "ar": _fmts("json3"), "en": _fmts("json3")})
+    assert pick_track(info) is None
+    assert pick_track(info, "en").language == "en"  # asking by name still works
+    named = _yt(language="en", subtitles=info["subtitles"])
+    assert pick_track(named).language == "en"
+
+
+def test_unnamed_language_still_takes_the_original_automatic_track():
+    info = _yt(
+        subtitles={"sq": _fmts("json3"), "en": _fmts("json3")},
+        automatic_captions={"de": _fmts("json3"), "en-orig": _fmts("json3")},
+    )
+    track = pick_track(info)
+    assert (track.language, track.auto) == ("en", True)
+
+
+def test_a_single_manual_track_is_taken_without_a_language():
+    info = _yt(subtitles={"en": _fmts("srv3"), "es": _fmts("vtt")})  # en has no usable format
+    assert pick_track(info).language == "es"
+
+
+def test_unnamed_language_error_says_why_and_how():
+    info = _yt(subtitles={"sq": _fmts("vtt"), "ar": _fmts("vtt"), "en": _fmts("vtt")})
+    with pytest.raises(NoCaptionsError, match="captions in 3 languages and names none") as exc:
+        fetch(FakeYDL(), info)
+    assert "language" in exc.value.fix and "whisper" in exc.value.fix
+
+
 def test_json3_only_for_youtube_otherwise_vtt():
     tracks = {"en": _fmts("json3", "vtt")}
     assert pick_track(_yt(subtitles=tracks)).ext == "json3"

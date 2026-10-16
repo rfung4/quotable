@@ -251,8 +251,8 @@
       "expect": {"captions": "manual", "transcript_tag": false, "language": "en", "speakers": null, "duration_s": 3180.0, "chapters": true},
       "tier": "short",
       "diarize": false,
-      "readme_row": false,
-      "note": "Manual en/ar/zh-CN tracks, 53 min, chapters. The pipeline takes the manual track, so this covers manual + long + chapters, not the auto path"
+      "readme_row": true,
+      "note": "Manual en/ar/zh-CN tracks, 53 min, chapters. The pipeline takes the manual track, so this covers manual + long + chapters, not the auto path; the README's captions row"
     },
     {
       "id": "ted-dweck",
@@ -262,11 +262,11 @@
         "name": "CC BY-NC-ND 4.0 (TED talks usage policy)",
         "source_url": "https://www.ted.com/about/our-organization/our-policies-terms/ted-talks-usage-policy"
       },
-      "expect": {"captions": "manual", "transcript_tag": false, "language": "en", "speakers": 1, "duration_s": 625.0, "chapters": true},
+      "expect": {"captions": "manual", "transcript_tag": false, "language": "en", "speakers": 1, "duration_s": 625.0, "chapters": true, "default_captions": "refused"},
       "tier": "short",
       "diarize": false,
-      "readme_row": true,
-      "note": "Manual captions in 43 languages; the README's captions row"
+      "readme_row": false,
+      "note": "Manual captions in 43 languages, and the metadata names no video language and has no -orig track: with no language asked for, the product refuses to guess (the first track in dict order was Albanian), so the captions cell expects NoCaptionsError; asked for 'en', the manual English track"
     },
     {
       "id": "nasa-students",

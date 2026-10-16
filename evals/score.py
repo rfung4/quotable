@@ -344,11 +344,16 @@ def judge(
     row: dict[str, Any], entry: dict[str, Any], m: dict[str, Any]
 ) -> tuple[bool | None, list[str]]:
     """``(pass, fails)``. Skipped cells are ``None``; crash, fail and error cells fail, except
-    that a no-speech error is the right answer on silence and on the 0.6 s clip."""
+    that a no-speech error is the right answer on silence and on the 0.6 s clip, and a
+    no-captions error is the right answer where the manifest says the default track is
+    refused (several caption languages, none named as the video's)."""
     status, eid = row["status"], entry["id"]
     if status == "skipped":
         return None, []
-    no_speech = status == "error" and (row.get("error") or {}).get("type") == "TranscriptionError"
+    error_type = (row.get("error") or {}).get("type") if status == "error" else None
+    if entry["expect"].get("default_captions") == "refused" and row["mode"] == "captions":
+        return (True, []) if error_type == "NoCaptionsError" else (False, ["status"])
+    no_speech = error_type == "TranscriptionError"
     if eid in EMPTY_BY_CONSTRUCTION:
         if no_speech or (status == "ok" and m.get("hyp_tokens") == 0):
             return True, []

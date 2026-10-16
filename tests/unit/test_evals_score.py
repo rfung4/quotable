@@ -219,6 +219,25 @@ def _m(**kw):
     return {**m, **kw}
 
 
+def test_refused_default_captions_rule():
+    ted = {
+        "id": "ted",
+        "expect": {"language": "en", "captions": "manual", "default_captions": "refused"},
+    }
+    refused = {"type": "NoCaptionsError", "message": "names none"}
+    captions = {"mode": "captions", "model": None}
+    assert sc.judge(_row(status="error", error=refused, **captions), ted, {}) == (True, [])
+    # a track came back after all (the bug), or another error: both fail
+    assert sc.judge(_row(**captions), ted, _m(language="sq")) == (False, ["status"])
+    download = {"type": "DownloadError", "message": "403"}
+    assert sc.judge(_row(status="error", error=download, **captions), ted, {}) == (
+        False,
+        ["status"],
+    )
+    # Whisper cells on the same entry are judged as usual
+    assert sc.judge(_row(), ted, _m()) == (True, [])
+
+
 def test_silence_rule():
     silence = _entry("silence-30s")
     no_speech = {"type": "TranscriptionError", "message": "No speech", "fix": "x"}
