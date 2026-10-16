@@ -133,8 +133,10 @@ The pipeline is captions-first: platform subtitles or a feed's
 `<podcast:transcript>` cost seconds and keep names right, so they win when
 they exist. Whisper runs otherwise, on the GPU when there is one. Segments are
 written to disk as they arrive, so a crashed or cancelled run resumes from its
-last segment. One model stays warm per process, and one lock serialises
-inference so two runs cannot fight for the card.
+last segment. One model stays warm per process, and one lock per process
+serialises inference so two runs in one server cannot fight for the card. Each
+MCP client starts its own server, so two clients hold two models: two `turbo`
+servers fit an 8 GB card, two diarizing ones may not.
 
 The server runs the work in-process. yt-dlp spawns ffmpeg and a JS runtime on
 its own, and a child that inherits the server's stdin or stdout would block or

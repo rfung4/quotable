@@ -42,7 +42,7 @@ _BAD_ID_FIX = "Use the `id` returned by `transcribe`, e.g. `Youtube-abc123:whisp
 def variant_name(
     method: Method | str, language: str | None, model: str | None, diarized: bool = False
 ) -> str:
-    """``{method}-{language}-{model|captions}[-diarized]`` (Decision 22), path-safe."""
+    """``{method}-{language}-{model|captions}[-diarized]`` path-safe."""
     method = Method(method)
     model_part = "captions" if method is Method.CAPTIONS else (model or "whisper")
     parts = [method.value, language or "und", Path(model_part).name or model_part]

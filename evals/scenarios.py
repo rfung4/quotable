@@ -54,7 +54,7 @@ WINDOW_S = 600.0
 WINDOW_PAGE_CHARS = 2000  # small, so a window spans several pages and offsets are exercised
 SAMPLE_S = 30.0
 GROWTH_MAX = 0.10
-RESUME_WER_MAX = 0.05  # provisional (Decision 10)
+RESUME_WER_MAX = 0.05  # provisional: a first value, met at 0.022 and 0.005
 BOUNDARY_S = 30.0
 
 

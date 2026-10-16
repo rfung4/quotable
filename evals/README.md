@@ -149,7 +149,7 @@ status, length, repeats and language only, because a feed can splice different a
 download; their text and timing are judged on the cached-audio cells. The 0.6 s clip is
 shorter than a VAD window and only has to not crash.
 
-Thresholds were first values, revisited once after the first full run (Decision 10):
+Thresholds were first values, revisited once after the first full run:
 
 - `segment` drift 0.3 → 0.5 s. The oracle starts words early itself: `small`, within 0.1 s
   of the exact TTS turn starts, measures 0.32–0.36 s against it on TED.
@@ -173,7 +173,7 @@ audio) and `jfk-loop-3h`, `turbo` · `cuda`, each in its own output directory:
 |----------|-------------|
 | `straight` | One uninterrupted run yields segments with no CUDA fallback |
 | `memory` | RSS and VRAM, sampled every 30 s during `straight`, grow no more than 10 % from the first sample after the first segment to the end |
-| `cancel_resume` | Cancelled once 600 s are done: the partial file has segments, the variant lock is free, the next call starts at or after 600 s, and the text past 600 s is within WER 0.05 of `straight` (provisional, Decision 10) |
+| `cancel_resume` | Cancelled once 600 s are done: the partial file has segments, the variant lock is free, the next call starts at or after 600 s, and the text past 600 s is within WER 0.05 of `straight` (a provisional first value) |
 | `paging` | Offset pages join to the full text exactly; 600 s window pages join to the overlapping segments exactly, no segment is in no window, and only segments straddling a boundary are in two |
 
 `darknet-179` adds `feed_transcript`: live feed and guid, `mode=auto`, with the enclosure
@@ -196,15 +196,15 @@ checklist sat in Claude Code against the repo's `.mcp.json`, which must have no 
 `python -m evals.report` writes `<out>/report.md` with the hardware line, the corpus and its
 licences, a summary per model and device, one results table per input kind, captions against
 the oracle, diarization, the scenarios and the MCP checklist, and pastes the same tables into
-the `MERGE_START(TABLES)` block of the local report (`docs/report/quotable-eval.md`, not
-tracked). `--readme` rewrites the README's Benchmark section from the manifest's `readme_row`
+the `MERGE_START(TABLES)` block of a written report when one exists (`--doc`, by default
+`docs/report/quotable-eval.md`, which is kept out of the repository). `--readme` rewrites the README's Benchmark section from the manifest's `readme_row`
 entries. `--check` requires the report to name every cell with current tables, the README to
 have no pending benchmark row, and nothing tracked to mention the deleted benchmark script.
 
 ## Results (2026-10-15 and 16, RTX 3070)
 
-The public-safe summary of the last full run, after the fixes it prompted; the verdict and the
-bug list are in the local report.
+The last full run, after the fixes it prompted. The open findings are the README's Known
+issues.
 
 - 211 cells, 204 pass, 7 fail, 0 skipped, 0 crashes. The 9 `error` rows are refusals by design:
   the silence clip (the store refuses an empty transcript) and the TED captions cell (no track

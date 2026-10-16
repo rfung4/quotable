@@ -1,4 +1,4 @@
-"""Pins the SDK's fd-level stdio isolation (SPEC Decision 5).
+"""Pins the SDK's fd-level stdio isolation, which quotable relies on instead of its own.
 
 If an `mcp` upgrade stops repointing fd 0/1 while serving, children such as ffmpeg inherit
 the JSON-RPC pipe: `cat` blocks on stdin and `echo` corrupts the wire.

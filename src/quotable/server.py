@@ -1,9 +1,9 @@
-"""The MCP server: three tools and two resources over stdio (Decisions 21, 23).
+"""The MCP server: three tools and two resources over stdio.
 
 Blocking work runs in a worker thread. Progress flows back per Whisper segment, and a
 client cancel sets the pipeline's cancel event so the thread stops between segments.
 stdio isolation is the SDK's: ``run()`` calls ``MCPServer.run("stdio")`` and never passes
-streams (Decision 5).
+streams, which would switch off the SDK's own fd 0/1 claim (``tests/unit/test_stdio.py``).
 """
 
 from __future__ import annotations

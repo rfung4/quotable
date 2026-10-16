@@ -8,8 +8,8 @@ rules it broke. ``--check`` replays both files and scores nothing.
 References: the script for TTS entries (exact text, turn times and speakers), the large-v3
 oracle for everything else, and on auto-captioned YouTube entries the captions' own word
 timings as a second, independent timing reference. Edit distances are exact Levenshtein on
-numpy rows (no ``jiwer``, Decision 5); the alignment path uses Hirschberg's split, so a 3 h
-transcript aligns in linear memory.
+numpy rows (no ``jiwer``: the eval adds no dependency); the alignment path uses Hirschberg's
+split, so a 3 h transcript aligns in linear memory.
 """
 
 from __future__ import annotations
@@ -35,7 +35,8 @@ from evals.oracle import EMPTY_BY_CONSTRUCTION, LOOP_OF, MAY_BE_EMPTY
 RESULTS = ROOT / "evals" / "results"
 REFS = ROOT / "evals" / "refs"
 
-# Decision 10: first values, revisited once after the first full run (changes go in the report).
+# First values, revisited once after the first full run; each change is noted where it applies
+# and listed in evals/README.md.
 WER_MAX = {"base": 0.20, "small": 0.15, "turbo": 0.10}  # tiny: reported only
 WORD_DRIFT_MAX = 0.2  # TTS turn starts and auto-caption word timings
 # Revisited 0.3 → 0.5: the large-v3 oracle starts words early itself, so `small`, which sits

@@ -1,7 +1,7 @@
 """Audio sources: local files pass through, URLs go through yt-dlp as a library.
 
 Audio is downloaded as-is (``bestaudio``) with no post-processing, so no ffmpeg binary is
-needed; faster-whisper decodes it with PyAV (Decision 6).
+needed; faster-whisper decodes it with PyAV.
 """
 
 from __future__ import annotations

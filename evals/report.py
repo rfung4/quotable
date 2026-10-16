@@ -6,8 +6,9 @@ and writes ``<results>/report.md``: the hardware line, the corpus with licences,
 per model and device, one results table per input kind, captions against the oracle,
 diarization, the scenarios and the MCP checklist. Where ``docs/report/quotable-eval.md``
 carries a ``<!-- MERGE_START(TABLES) -->`` block, that block is replaced by the same tables;
-the judgment around it is written by hand (Decision 11). ``--readme`` rewrites the README's
-Benchmark section from the manifest's ``readme_row`` entries (Decision 13). ``--check``
+the judgment around it is written by hand. ``--readme`` rewrites the README's Benchmark
+section from the manifest's ``readme_row`` entries, so the README's numbers come from the
+matrix and name the item they measured. ``--check``
 replays: the report names every cell and its tables are current, the README has no pending
 benchmark row, and nothing tracked outside the dev docs mentions the deleted benchmark script.
 """
