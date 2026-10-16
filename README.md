@@ -7,8 +7,7 @@ on your own machine. Every line carries a timestamp, and a speaker label when
 you ask for one. Captions first, [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
 when there are none. Exposed as an MCP server over stdio and as a CLI.
 
-<!-- TODO(demo): asciinema/GIF of Claude Code citing a speaker at a timestamp,
-     recorded on a CC-licensed or own recording. Owner: Ross. -->
+![Claude Code transcribing an interview with speaker labels and quoting a speaker at a timestamp](https://raw.githubusercontent.com/rfung4/quotable/main/docs/demo.gif)
 
 ## Install
 
