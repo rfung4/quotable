@@ -226,6 +226,15 @@ def test_pick_episode_by_guid_index_title_and_default(net):
     assert feeds.pick_episode(feed, "interview").guid == "ep-2"
 
 
+def test_pick_episode_title_words_in_several_titles_are_an_error(net):
+    feed = _feed(net)
+    with pytest.raises(SourceError, match="3 episodes match 'episode'") as exc:
+        feeds.pick_episode(feed, "episode")
+    assert "1: Episode 3: Q&A; 2: Episode 2: Interviews; 3: Episode 1: Pilot" in exc.value.fix
+    assert feeds.pick_episode(feed, "episode 1: pilot").guid == "1"  # an exact title wins
+    assert feeds.pick_episode(feed, "Pilot").guid == "1"  # one containing title
+
+
 def test_pick_episode_miss_lists_recent_titles(net):
     feed = _feed(net)
     with pytest.raises(SourceError) as exc:

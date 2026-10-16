@@ -316,7 +316,8 @@ def list_episodes(url: str) -> list[EpisodeInfo]:
 
 def pick_episode(feed: Feed, episode: str | int | None = None) -> Episode:
     """Default newest. An ``int`` is a 1-based index (1 = newest); a string is tried as an
-    exact guid, then as an index, then as a title substring (guids may be digits)."""
+    exact guid, then as an index, then as a title: an exact title, else the one title that
+    contains it (guids may be digits). Words in several titles are an error, not a guess."""
     if not feed.episodes:
         raise SourceError("The feed has no episodes.")
     if episode is None or episode == "":
@@ -335,9 +336,19 @@ def pick_episode(feed: Feed, episode: str | int | None = None) -> Episode:
     if wanted.isdigit() and 1 <= int(wanted) <= len(feed.episodes):
         return feed.episodes[int(wanted) - 1]
     lowered = wanted.lower()
-    for ep in feed.episodes:
-        if lowered in ep.title.lower():
-            return ep
+    matches = [ep for ep in feed.episodes if lowered in ep.title.lower()]
+    exact = [ep for ep in matches if ep.title.strip().lower() == lowered]
+    if len(exact) == 1:
+        return exact[0]
+    if len(matches) == 1:
+        return matches[0]
+    if matches:
+        listed = "; ".join(f"{ep.index}: {ep.title}" for ep in matches[:5])
+        more = f" (and {len(matches) - 5} more)" if len(matches) > 5 else ""
+        raise SourceError(
+            f"{len(matches)} episodes match {wanted!r}.",
+            fix=f"Pass a guid, a 1-based index or more of the title. Matches: {listed}{more}",
+        )
     recent = "; ".join(f"{ep.index}: {ep.title}" for ep in feed.episodes[:5])
     raise SourceError(
         f"No episode matches {wanted!r}.",
