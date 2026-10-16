@@ -1,4 +1,4 @@
-"""Optional speaker diarization (``quotable[diarize]``): pyannote turns → word speakers.
+"""Optional speaker diarization (``quotable-mcp[diarize]``): pyannote turns → word speakers.
 
 pyannote is imported lazily so the base install never needs torch. ``assign_speakers`` is
 a pure function and carries all the alignment logic; it needs no pyannote to test.
@@ -45,7 +45,7 @@ def load_pipeline(token: str | None, device: str = "cpu") -> Any:
     except ImportError as exc:
         raise DiarizationUnavailableError(
             "Speaker labels need the optional diarize extra, which is not installed.",
-            fix="pip install 'quotable[diarize]' (or uvx 'quotable[diarize]'), then retry.",
+            fix="pip install 'quotable-mcp[diarize]' (or uvx 'quotable-mcp[diarize]'), then retry.",
         ) from exc
     if not token:
         raise DiarizationUnavailableError(

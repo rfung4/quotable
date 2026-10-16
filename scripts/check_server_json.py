@@ -26,10 +26,14 @@ def main() -> int:
         schema = json.load(resp)
     jsonschema.validate(manifest, schema)
 
-    expected = version("quotable")
+    dist = "quotable-mcp"
+    expected = version(dist)
     found = {"server.json version": manifest["version"]}
     for i, pkg in enumerate(manifest.get("packages", [])):
         found[f"server.json packages[{i}].version"] = pkg["version"]
+        if pkg["identifier"] != dist:
+            print(f"server.json packages[{i}].identifier is not {dist!r}", file=sys.stderr)
+            return 1
     if args.tag is not None:
         found["tag"] = args.tag.removeprefix("v")
     bad = {k: v for k, v in found.items() if v != expected}

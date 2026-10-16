@@ -18,7 +18,7 @@
 |-----------|--------|
 | Python | 3.10 to 3.14 |
 | Packaging | `uv`, hatchling, src layout |
-| Install | `uvx quotable`; `uvx --from 'quotable[diarize]' quotable` |
+| Install | `uvx quotable-mcp`; `uvx --from 'quotable-mcp[diarize]' quotable` (PyPI's `quotable` is someone else's) |
 | Transport | stdio only |
 | Cache | `$XDG_DATA_HOME/quotable`, one directory per source × variant |
 

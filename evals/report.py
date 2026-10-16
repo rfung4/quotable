@@ -146,7 +146,7 @@ def hardware_line(short: bool = False) -> str:
             f"{platform.system()} {platform.release()} {platform.machine()}",
             f"Python {platform.python_version()}",
         ]
-        parts += [f"ctranslate2 {_version('ctranslate2')}", f"quotable {_version('quotable')}"]
+        parts += [f"ctranslate2 {_version('ctranslate2')}", f"quotable {_version('quotable-mcp')}"]
     return " · ".join(parts)
 
 

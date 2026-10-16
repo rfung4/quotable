@@ -12,7 +12,7 @@ stand up to a stranger.
 
 - Captions first: platform subtitles or a feed's `<podcast:transcript>` when
   they exist, faster-whisper on the GPU otherwise.
-- Optional speaker labels via pyannote (`quotable[diarize]`).
+- Optional speaker labels via pyannote (`quotable-mcp[diarize]`).
 - Every result cached per variant and served paged, by character offset or by
   time window, plus `transcript://{id}` resources.
 - Long runs stream progress with the newest line, can be cancelled, and

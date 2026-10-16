@@ -44,9 +44,9 @@ def _wheel_command() -> list[str]:
     version = subprocess.run(
         ["uv", "version", "--short"], cwd=ROOT, check=True, capture_output=True, text=True
     ).stdout.strip()
-    wheel = ROOT / "dist" / f"quotable-{version}-py3-none-any.whl"
+    wheel = ROOT / "dist" / f"quotable_mcp-{version}-py3-none-any.whl"
     # --refresh-package: a rebuilt wheel keeps its version, and uvx would serve the cached one.
-    return ["uvx", "--refresh-package", "quotable", "--from", str(wheel), "quotable", "serve"]
+    return ["uvx", "--refresh-package", "quotable-mcp", "--from", str(wheel), "quotable", "serve"]
 
 
 def _dump(model) -> dict:

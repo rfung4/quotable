@@ -12,14 +12,14 @@ when there are none. Exposed as an MCP server over stdio and as a CLI.
 ## Install
 
 ```bash
-uvx quotable --help
-claude mcp add quotable -- uvx quotable serve
+uvx quotable-mcp --help
+claude mcp add quotable -- uvx quotable-mcp serve
 ```
 
 With speaker labels (pulls in PyTorch and pyannote, about 2 GB):
 
 ```bash
-claude mcp add quotable -e QUOTABLE_HF_TOKEN=hf_... -- uvx --from 'quotable[diarize]' quotable serve
+claude mcp add quotable -e QUOTABLE_HF_TOKEN=hf_... -- uvx --from 'quotable-mcp[diarize]' quotable serve
 ```
 
 Diarization uses pyannote's

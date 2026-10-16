@@ -2,4 +2,6 @@
 
 from importlib.metadata import version
 
-__version__ = version("quotable")
+# PyPI's `quotable` is an unrelated project; this one is published as quotable-mcp.
+DIST = "quotable-mcp"
+__version__ = version(DIST)

@@ -1,5 +1,5 @@
 [project]
-name = "quotable"
+name = "quotable-mcp"
 version = "0.1.0"
 description = "Local-first MCP server and CLI that turns recordings, podcast feeds and media URLs into cite-ready transcripts"
 readme = "README.md"
@@ -35,6 +35,7 @@ diarize = ["pyannote.audio>=4"]
 
 [project.scripts]
 quotable = "quotable.cli:main"
+quotable-mcp = "quotable.cli:main"  # so `uvx quotable-mcp` needs no --from
 
 [project.urls]
 Repository = "https://github.com/rfung4/quotable"

@@ -103,7 +103,7 @@ def test_missing_extra_says_how_to_install(monkeypatch):
     monkeypatch.setitem(sys.modules, "pyannote.audio", None)  # makes the import fail
     with pytest.raises(DiarizationUnavailableError) as exc:
         dz.load_pipeline("hf_x")
-    assert "quotable[diarize]" in exc.value.fix
+    assert "quotable-mcp[diarize]" in exc.value.fix
 
 
 def test_missing_token_points_at_the_terms_page(monkeypatch):

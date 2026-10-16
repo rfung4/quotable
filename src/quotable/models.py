@@ -119,7 +119,7 @@ class TranscriptionError(QuotableError):
 
 
 class DiarizationUnavailableError(QuotableError):
-    default_fix = "pip install 'quotable[diarize]' and set QUOTABLE_HF_TOKEN."
+    default_fix = "pip install 'quotable-mcp[diarize]' and set QUOTABLE_HF_TOKEN."
 
 
 class CancelledError(QuotableError):
