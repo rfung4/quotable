@@ -20,12 +20,14 @@ uv run python -m evals.oracle
 uv run python -m evals.run
 uv run python -m evals.score
 uv run python -m evals.scenarios
+uv run python -m evals.mcp_probe
 ```
 
 In order: generate the local media and validate the manifest against the live sources;
 synthesise the TTS dialogues (each turn is cached, so a re-run never re-bills); download
 each URL and feed entry's audio once into `evals/media/cache/` and write the `large-v3`
-references; run the matrix; score it; run the long-run scenarios on an idle GPU. Each has `--help`, and each but the runner has a
+references; run the matrix; score it; run the long-run scenarios on an idle GPU;
+probe the MCP surface of the built wheel. Each has `--help`, and each but the runner has a
 `--check` or `--validate` that only verifies what exists.
 
 ## The matrix
@@ -178,3 +180,12 @@ download made to raise; the transcript-tag path must be taken.
 
 `memory` measures growth, not peak. The peak comes before the first segment (the
 spectrogram of the whole file is built at once) and is the matrix row's `max_rss_mb`.
+
+## MCP
+
+`python -m evals.mcp_probe` builds the wheel, serves it with `uvx` (`tiny` · `cpu`, a
+temporary output directory), transcribes, pages and reads the resource over stdio, and
+writes `evals/results/mcp_surface.json`: tools with schemas and annotations, resource templates,
+server instructions and the round trip's checks. `--command "<serve command>"` probes
+another server. `--check` replays it together with `evals/results/mcp_checklist.md`, the in-client
+checklist sat in Claude Code against the repo's `.mcp.json`, which must have no open item.

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "quotable": {
+      "command": "uv",
+      "args": ["run", "quotable", "serve"],
+      "env": {
+        "QUOTABLE_MODEL": "turbo"
+      }
+    }
+  }
+}
