@@ -163,17 +163,17 @@ The full matrix (every input kind, four models, both devices, the long-run scena
 
 ## Why not one of the others
 
-<!-- Every cell below goes through /verify-claims before the repo is public.
-     Sources read 2026-10-12; the competitors move. -->
+Each cell read from the project's own source on 2026-10-16; they move, so check before relying
+on one.
 
-| | quotable | yueying | transcriptor-mcp | hearsay | mcp-video-analyzer |
+| | quotable | [yueying](https://github.com/vsh5dvsch7-png/yueying) | [transcriptor-mcp](https://github.com/samson-art/transcriptor-mcp) | [hearsay](https://github.com/mudassar531/hearsay) | [mcp-video-analyzer](https://github.com/guimatheus92/mcp-video-analyzer) |
 |---|---|---|---|---|---|
-| Captions first, Whisper fallback | yes | yes | not checked | not checked | not checked |
-| Typed tool errors, never success-shaped text | yes | no (`"ERROR: …"` strings) | not checked | not checked | not checked |
-| Structured output and `transcript://` resources | yes | no | not checked | not checked | not checked |
-| Speaker labels over MCP | yes (extra) | no | no | CLI only | no |
-| Podcast RSS as an input | yes | no | no | no | no |
-| Partial text, resume, cancel on long runs | yes | progress only | not checked | not checked | not checked |
+| Captions first, Whisper fallback | yes | yes | yes (Whisper opt-in, as a service) | yes | yes |
+| Typed tool errors, never success-shaped text | yes | no (`"ERROR: …"` strings) | yes | yes | partly (no transcript is a success with a warning) |
+| Structured output and transcript resources | yes | no | yes | no (markdown text) | no (JSON in a text block) |
+| Speaker labels over MCP | yes (extra) | no | no | CLI only | from platform captions only |
+| Podcast RSS as an input | yes | no | no | CLI only | no |
+| Partial text, resume, cancel on long runs | yes | progress only | no (a timed-out job finishes in the background for a retry) | no | progress only |
 | Keyframes, OCR, visual analysis | no, by design | yes | yes | no | yes |
 
 If you need frames or OCR, use one of those; quotable aims at the transcript
