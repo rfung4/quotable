@@ -192,9 +192,8 @@ Found by the evaluation in `evals/README.md` (October 2026, one machine); not fi
 - **`turbo` starts words 0.15 to 0.26 s early** and splits some produced podcasts into
   very short lines. It shows in SRT/VTT, not in `[hh:mm:ss]` citations; `small` is tighter.
 - **YouTube sometimes answers 403.** The call fails with a typed error; call again.
-- **In Claude Code**, the third-party-content notice is only in the server instructions (the
-  client passes the model the structured result), `@`-mentioning a transcript does not attach
-  it, and a call longer than 120 s moves to a background task: the next call is a cache hit.
+- **In Claude Code**, `@`-mentioning a transcript does not attach it, and a call longer than
+  120 s moves to a background task: it keeps running, and the next call is a cache hit.
 
 ## Rights
 

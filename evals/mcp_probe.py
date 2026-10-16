@@ -81,6 +81,13 @@ async def _probe(command: list[str], out_dir: Path, errlog_path: Path) -> dict:
     checks = {
         "transcribe_ok": not result.is_error and bool(tid),
         "untrusted_first_line": text.startswith(UNTRUSTED),
+        # What a client that forwards only structured content shows: the notice, first.
+        "untrusted_structured": all(
+            list(r.structured_content or {})[:1] == ["notice"]
+            and r.structured_content["notice"] == UNTRUSTED
+            for r in (result, page)
+            if r is not None
+        ),
         "progress_messages": sum(1 for m in progress if m),
         "page_ok": page is not None and not page.is_error and "ask not" in page_text.lower(),
         "resource_ok": body.startswith("[00:00:00]") and "ask not" in body.lower(),

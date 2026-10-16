@@ -138,7 +138,7 @@ def test_tools_schemas_and_annotations(settings):
         "timestamps",
     }
     assert rd.input_schema["properties"]["offset"]["minimum"] == 0
-    assert set(rd.output_schema["properties"]) >= {"id", "text", "next_offset", "total_chars"}
+    assert set(rd.output_schema["properties"]) >= {"notice", "id", "text", "next_offset"}
     assert set(mi.output_schema["properties"]) == set(MediaInfo.model_fields)
 
     a = tx.annotations
@@ -182,6 +182,10 @@ def test_transcribe_returns_structured_result_text_and_resource_link(settings, f
     assert Path(data.path, "transcript.json").is_file()
     assert data.next_offset is not None and len(data.text) <= 20_000
     assert render_txt(fake.segments).startswith(data.text)
+
+    # A client that forwards only the structured result still shows the notice first.
+    assert next(iter(result.structured_content)) == "notice"
+    assert data.notice == UNTRUSTED
 
     text, link = result.content
     assert text.text.startswith(UNTRUSTED + "\n")
@@ -319,6 +323,8 @@ def test_paging_by_offset_round_trips_the_whole_text(settings, store):
             )
             assert not r.is_error
             assert r.content[0].text.startswith(UNTRUSTED + "\n")
+            assert list(r.structured_content)[:2] == ["notice", "id"]
+            assert r.structured_content["notice"] == UNTRUSTED
             pages.append(r.structured_content["text"])
             offset = r.structured_content["next_offset"]
         return pages
