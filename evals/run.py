@@ -262,7 +262,7 @@ def _measure(cell: Cell, entry: dict[str, Any], out: Path, row: dict[str, Any]) 
                 started = time.monotonic()
                 transcribe.get_model(settings)
                 if cell.diarize:
-                    diarize.get_pipeline(settings.hf_token)
+                    diarize.get_pipeline(settings)
                 row["load_s"] = round(time.monotonic() - started, 3)
 
             progress = Progress()

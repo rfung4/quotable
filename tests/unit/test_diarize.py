@@ -1,9 +1,11 @@
 import sys
 import types
+from pathlib import Path
 
 import pytest
 
 from quotable import diarize as dz
+from quotable.config import Settings
 from quotable.diarize import Turn, assign_speakers
 from quotable.models import DiarizationUnavailableError, Segment, Word
 
@@ -140,8 +142,35 @@ def test_pipeline_is_loaded_with_the_token_and_cached(monkeypatch):
         return FakePipeline()
 
     _fake_pyannote(monkeypatch, from_pretrained)
-    assert dz.get_pipeline("hf_ok") is dz.get_pipeline("hf_ok")
+    settings = _settings(hf_token="hf_ok")
+    assert dz.get_pipeline(settings) is dz.get_pipeline(settings)
     assert calls == [(dz.MODEL_ID, "hf_ok")]
+
+
+def _settings(**over):
+    base = dict(output_dir=Path("out"), model="tiny", device="cpu", compute_type="int8")
+    return Settings(**{**base, **over})
+
+
+@pytest.mark.parametrize(
+    ("device", "cuda_broken", "moved"),
+    [("cuda", False, True), ("cpu", False, False), ("cuda", True, False)],
+)
+def test_pipeline_goes_to_cuda_only_when_whisper_is_on_it(monkeypatch, device, cuda_broken, moved):
+    moves = []
+
+    class FakePipeline:
+        def to(self, dev):
+            moves.append(str(dev))
+
+    _fake_pyannote(monkeypatch, lambda model_id, token=None: FakePipeline())
+    torch = types.SimpleNamespace(
+        cuda=types.SimpleNamespace(is_available=lambda: True), device=lambda name: name
+    )
+    monkeypatch.setitem(sys.modules, "torch", torch)
+    monkeypatch.setattr(dz.tx, "_cuda_broken", cuda_broken)
+    dz.get_pipeline(_settings(hf_token="hf_ok", device=device))
+    assert moves == (["cuda"] if moved else [])
 
 
 def test_diarize_reads_the_exclusive_annotation_sorted(monkeypatch, tmp_path):
@@ -162,7 +191,7 @@ def test_diarize_reads_the_exclusive_annotation_sorted(monkeypatch, tmp_path):
         ),
         speaker_diarization=Annotation([]),
     )
-    monkeypatch.setattr(dz, "get_pipeline", lambda token: lambda audio: output)
+    monkeypatch.setattr(dz, "get_pipeline", lambda settings: lambda audio: output)
     monkeypatch.setattr(dz, "_waveform", lambda path: {"waveform": None, "sample_rate": 16000})
     settings = types.SimpleNamespace(hf_token="hf_ok")
     assert dz.diarize(tmp_path / "a.flac", settings) == [

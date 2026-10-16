@@ -49,7 +49,8 @@ All under `src/quotable/`. Arrows point from caller to callee; nothing below
    yields the `source_key` and the metadata (title, duration, chapters,
    `cite_url`).
 2. **Variant** = `{method}-{language}-{model|captions}[-diarized]`, where
-   language is the *requested* one (`und` when none). The cache id handed to
+   language is the *requested* one (`und` when none; on the Whisper path its base
+   code, so `en-US` is `en`). The cache id handed to
    agents is `source_key:variant`.
 3. **Lock** the variant (`filelock` under `OUTPUT_DIR/.locks/`), then check the
    cache. A second caller on the same variant waits and reads the cache.

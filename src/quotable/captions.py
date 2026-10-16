@@ -136,7 +136,7 @@ def fetch(
 
     try:
         segments = parse_json3(body, words=track.auto) if track.ext == "json3" else parse_vtt(body)
-    except (ValueError, KeyError, TypeError) as exc:
+    except (ValueError, KeyError, TypeError, OverflowError) as exc:  # int(Infinity) overflows
         raise NoCaptionsError(f"Caption track could not be parsed ({track.ext}).") from exc
     if not segments:
         raise NoCaptionsError(f"Caption track ({track.language}, {track.ext}) is empty.")

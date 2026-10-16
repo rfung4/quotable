@@ -2,7 +2,7 @@
 
 Everything in a feed is attacker-controlled, including every URL it names. All feed I/O
 goes through ``_fetch``/``_stream_to``: http(s) only (before, during and after redirects),
-a timeout on every call, and a byte cap on everything except audio.
+a timeout on every call, and a byte cap on everything (a generous one on audio).
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import http.client
 import json
+import math
 import re
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -38,6 +39,9 @@ USER_AGENT = f"quotable/{__version__} (+https://github.com/rfung4/quotable)"
 SNIFF_BYTES = 64 * 1024
 FEED_MAX_BYTES = 50 * 1024 * 1024
 TRANSCRIPT_MAX_BYTES = 10 * 1024 * 1024
+# Far past any audio episode (10 h at 320 kb/s is 1.4 GB); a bound on what a hostile or
+# broken enclosure can write to disk.
+ENCLOSURE_MAX_BYTES = 8 * 1024**3
 _ALLOWED_SCHEMES = ("http", "https")
 _NETWORK_ERRORS = (OSError, http.client.HTTPException)
 
@@ -131,9 +135,17 @@ def _fetch(url: str, max_bytes: int, *, truncate: bool = False) -> bytes:
 
 def _stream_to(url: str, path: Path) -> None:
     resp = _open(url)
+    written, max_bytes = 0, ENCLOSURE_MAX_BYTES
     try:
         with path.open("wb") as fh:
             for chunk in iter(lambda: resp.read(1 << 20), b""):
+                written += len(chunk)
+                if written > max_bytes:
+                    raise SourceError(
+                        f"Download from {urlsplit(url).netloc} exceeds {max_bytes} bytes.",
+                        fix="That is far larger than any audio episode. Download it yourself and "
+                        "pass the file's path.",
+                    )
                 fh.write(chunk)
     finally:
         resp.close()
@@ -159,6 +171,7 @@ class Episode:
     enclosure_url: str | None
     transcripts: tuple[TranscriptRef, ...] = ()
     transcript_types: tuple[str, ...] = ()
+    feed_url: str = ""
 
     def info(self) -> EpisodeInfo:
         return EpisodeInfo(
@@ -222,8 +235,13 @@ def _published(raw: str | None) -> tuple[str | None, float | None]:
     return dt.isoformat(), dt.timestamp()
 
 
-def _transcripts(item: ET.Element) -> tuple[tuple[TranscriptRef, ...], tuple[str, ...]]:
-    """The usable transcript refs, and every declared type (usable or not, deduplicated)."""
+def _transcripts(
+    item: ET.Element, feed_language: str | None = None
+) -> tuple[tuple[TranscriptRef, ...], tuple[str, ...]]:
+    """The usable transcript refs, and every declared type (usable or not, deduplicated).
+
+    A transcript without a ``language`` is in the channel's ``<language>`` (podcast namespace).
+    """
     refs: list[TranscriptRef] = []
     types: list[str] = []
     for child in item:
@@ -237,7 +255,8 @@ def _transcripts(item: ET.Element) -> tuple[tuple[TranscriptRef, ...], tuple[str
         kind = _TRANSCRIPT_TYPES.get(mime)
         url = (child.get("url") or "").strip()
         if kind and url:
-            refs.append(TranscriptRef(url=url, kind=kind, language=child.get("language")))
+            language = child.get("language") or feed_language
+            refs.append(TranscriptRef(url=url, kind=kind, language=language))
     return tuple(refs), tuple(types)
 
 
@@ -255,11 +274,12 @@ def parse_feed(body: bytes, url: str) -> Feed:
     if _local(root.tag) != "rss" or (channel := root.find("channel")) is None:
         raise SourceError("Not an RSS feed (no <rss><channel>).")
 
+    feed_language = _child_text(channel, "language")
     raw = []
     for order, item in enumerate(channel.findall("item")):
         enclosure = item.find("enclosure")
         published, ts = _published(_child_text(item, "pubDate"))
-        transcripts, transcript_types = _transcripts(item)
+        transcripts, transcript_types = _transcripts(item, feed_language)
         raw.append(
             (
                 ts,
@@ -277,7 +297,9 @@ def parse_feed(body: bytes, url: str) -> Feed:
         )
     # Newest first by pubDate; undated items keep feed order after the dated ones.
     raw.sort(key=lambda r: (r[0] is None, -(r[0] or 0), r[1]))
-    episodes = [Episode(index=i + 1, **fields) for i, (_, _, fields) in enumerate(raw)]
+    episodes = [
+        Episode(index=i + 1, feed_url=url, **fields) for i, (_, _, fields) in enumerate(raw)
+    ]
     return Feed(url=url, title=_child_text(channel, "title"), episodes=episodes)
 
 
@@ -356,30 +378,36 @@ def pick_episode(feed: Feed, episode: str | int | None = None) -> Episode:
     )
 
 
-def choose_transcript(ep: Episode, language: str | None = None) -> TranscriptRef | None:
-    def rank(ref: TranscriptRef) -> tuple[int, int]:
-        lang_miss = 0
-        if language:
-            lang_miss = int(
-                (ref.language or "").split("-")[0].lower() != language.split("-")[0].lower()
-            )
-        return lang_miss, _PREFERENCE.index(ref.kind)
+def _base(code: str) -> str:
+    return code.split("-")[0].lower()
 
-    return min(ep.transcripts, key=rank) if ep.transcripts else None
+
+def choose_transcript(ep: Episode, language: str | None = None) -> TranscriptRef | None:
+    """The preferred format, in ``language`` when one is asked for. A transcript declared in
+    another language is never one in this language; one that names none may be."""
+    refs = ep.transcripts
+    if language:
+        refs = tuple(r for r in refs if r.language is None or _base(r.language) == _base(language))
+
+    def rank(ref: TranscriptRef) -> tuple[bool, int]:
+        return bool(language) and ref.language is None, _PREFERENCE.index(ref.kind)
+
+    return min(refs, key=rank) if refs else None
 
 
 def fetch_transcript(ep: Episode, language: str | None = None) -> list[Segment] | None:
     """Segments from the episode's own transcript, or ``None`` when it ships none.
 
     A transcript that can't be fetched or parsed, or is empty, is a miss (``NoCaptionsError``)
-    so it can never be cached as a result. A non-http(s) URL is refused (``SourceError``).
+    so it can never be cached as a result and auto mode moves on to the enclosure. That
+    includes a URL ``_fetch`` refuses (not http(s), oversize), which it refuses before opening.
     """
     ref = choose_transcript(ep, language)
     if ref is None:
         return None
     try:
         body = _fetch(ref.url, TRANSCRIPT_MAX_BYTES).decode("utf-8", errors="replace")
-    except _NETWORK_ERRORS as exc:
+    except (SourceError, *_NETWORK_ERRORS) as exc:
         raise NoCaptionsError(f"Could not fetch the episode transcript: {exc}") from exc
     try:
         segments = {"json": parse_json_transcript, "srt": parse_srt, "vtt": parse_vtt}[ref.kind](
@@ -393,14 +421,21 @@ def fetch_transcript(ep: Episode, language: str | None = None) -> list[Segment] 
 
 
 def episode_key(ep: Episode) -> str:
-    basis = ep.guid or ep.enclosure_url
-    if not basis:
+    """Guids are only unique within a feed (plenty are "1" or "ep-12"): the feed is in the key."""
+    if ep.guid:
+        basis = f"{ep.feed_url}\n{ep.guid}"
+    elif ep.enclosure_url:
+        basis = ep.enclosure_url
+    else:
         raise SourceError(f"Episode {ep.title!r} has neither a guid nor an enclosure.")
     return f"rss-{hashlib.sha256(basis.encode()).hexdigest()[:16]}"
 
 
 def episode_cite(ep: Episode) -> str | None:
-    return fragment_cite(ep.enclosure_url) if ep.enclosure_url else None
+    """The enclosure as a citation link, or None: a javascript: or file: URL is no citation."""
+    if not ep.enclosure_url or urlsplit(ep.enclosure_url).scheme.lower() not in _ALLOWED_SCHEMES:
+        return None
+    return fragment_cite(ep.enclosure_url)
 
 
 def download_enclosure(ep: Episode, outdir: Path) -> AudioSource:
@@ -474,7 +509,10 @@ def parse_json_transcript(body: str) -> list[Segment]:
         if not text:
             continue
         start = float(seg["startTime"])
-        end = max(float(seg.get("endTime", start)), start)
+        end = float(seg.get("endTime", start))
+        if not (math.isfinite(start) and math.isfinite(end)):  # json.loads takes NaN, Infinity
+            raise ValueError(f"non-finite time in segment {text[:40]!r}")
+        end = max(end, start)
         items.append((start, end, text, seg.get("speaker") or None))
     if not items:
         return []

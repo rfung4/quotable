@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import quotable.transcribe as tx
 from quotable.config import Settings
 from quotable.models import DiarizationUnavailableError, Segment, Word
 from quotable.transcribe import INFERENCE_LOCK, SAMPLE_RATE
@@ -28,7 +29,7 @@ _TOKEN_FIX = (
 _AUTH_HINTS = ("401", "403", "gated", "unauthorized", "forbidden", "access", "token")
 
 _LOAD_LOCK = threading.Lock()
-_pipeline: tuple[str, Any] | None = None
+_pipeline: tuple[tuple[str, str], Any] | None = None  # ((token, device), pipeline)
 
 
 @dataclass(frozen=True)
@@ -38,7 +39,7 @@ class Turn:
     speaker: str
 
 
-def load_pipeline(token: str | None) -> Any:
+def load_pipeline(token: str | None, device: str = "cpu") -> Any:
     try:
         from pyannote.audio import Pipeline
     except ImportError as exc:
@@ -63,21 +64,28 @@ def load_pipeline(token: str | None) -> Any:
         raise DiarizationUnavailableError(
             "Hugging Face did not grant access to the pyannote model.", fix=_TOKEN_FIX
         )
-    try:
-        import torch
+    if device == "cuda":
+        try:
+            import torch
 
-        if torch.cuda.is_available():
-            pipeline.to(torch.device("cuda"))
-    except Exception:  # CPU diarization is slow but correct
-        pass
+            if torch.cuda.is_available():
+                pipeline.to(torch.device("cuda"))
+        except Exception:  # CPU diarization is slow but correct
+            pass
     return pipeline
 
 
-def get_pipeline(token: str | None) -> Any:
+def _device(settings: Settings) -> str:
+    """CUDA only when Whisper is on it: QUOTABLE_DEVICE=cpu, or a CUDA failure, means CPU."""
+    return "cuda" if settings.device == "cuda" and not tx._cuda_broken else "cpu"
+
+
+def get_pipeline(settings: Settings) -> Any:
     global _pipeline
+    key = (settings.hf_token or "", _device(settings))
     with _LOAD_LOCK:
-        if _pipeline is None or _pipeline[0] != (token or ""):
-            _pipeline = (token or "", load_pipeline(token))
+        if _pipeline is None or _pipeline[0] != key:
+            _pipeline = (key, load_pipeline(*key))
         return _pipeline[1]
 
 
@@ -100,7 +108,7 @@ def _annotation(output: Any) -> Any:
 
 
 def diarize(audio: Path, settings: Settings) -> list[Turn]:
-    pipeline = get_pipeline(settings.hf_token)
+    pipeline = get_pipeline(settings)
     with INFERENCE_LOCK:
         output = pipeline(_waveform(audio))
     turns = [

@@ -187,6 +187,8 @@ def _caption_plan(
         ep = src.episode
         ref = feeds.choose_transcript(ep, language)
         if ref is None:
+            if ep.transcripts:
+                raise NoCaptionsError(f"This episode ships no transcript in {language!r}.")
             raise NoCaptionsError("This episode ships no transcript.")
         return ref.language or language, lambda: feeds.fetch_transcript(ep, language) or []
     track = captions.pick_track(src.info, language)
@@ -229,6 +231,7 @@ def _from_audio(
     settings: Settings,
 ) -> Outcome:
     key = src.key
+    language = tx.whisper_language(language)
     variant = variant_name(Method.WHISPER, language, settings.model, diarize)
     with store.variant_lock(key, variant):
         if force:
@@ -236,7 +239,7 @@ def _from_audio(
         elif (hit := _cached(store, key, variant)) is not None:
             return hit
         if diarize:
-            dz.get_pipeline(settings.hf_token)  # a missing extra or token fails before Whisper
+            dz.get_pipeline(settings)  # a missing extra or token fails before Whisper
         _check_cancel(cancel)
 
         media = _fetch_audio(src, work)

@@ -84,7 +84,7 @@ in its first line, and an agent should treat it as data, never as instructions.
 | Variable | Default | Meaning |
 |----------|---------|---------|
 | `QUOTABLE_OUTPUT_DIR` | `$XDG_DATA_HOME/quotable` (`~/.local/share/quotable`) | Cache of transcripts: `transcript.json`, `.txt`, `.srt` per variant |
-| `QUOTABLE_DEVICE` | `auto` | `auto`, `cpu` or `cuda`; `auto` picks CUDA when ctranslate2 sees a GPU |
+| `QUOTABLE_DEVICE` | `auto` | `auto`, `cpu` or `cuda`; `auto` picks CUDA when ctranslate2 sees a GPU. Diarization follows it |
 | `QUOTABLE_MODEL` | `turbo` on CUDA, `base` on CPU | Any faster-whisper model name |
 | `QUOTABLE_COMPUTE_TYPE` | `float16` on CUDA, `int8` on CPU | ctranslate2 compute type |
 | `QUOTABLE_KEEP_AUDIO` | off | Keep downloaded audio in its scratch directory (path logged to stderr) instead of deleting it; nothing reads it back |

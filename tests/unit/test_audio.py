@@ -195,3 +195,20 @@ def test_is_url():
     assert audio.is_url("https://a.example/x") and audio.is_url("http://a.example")
     assert not audio.is_url("file:///etc/passwd")
     assert not audio.is_url(str(Path("relative/file.mp3")))
+
+
+def test_generic_urls_with_the_same_file_name_get_different_keys():
+    a = {
+        "extractor_key": "Generic",
+        "id": "master",
+        "webpage_url": "https://a.example/s/master.m3u8",
+    }
+    b = {**a, "webpage_url": "https://b.example/live/master.m3u8"}
+    assert audio.url_key(a) != audio.url_key(b)
+    assert audio.url_key(a).startswith("Generic-")
+
+
+@pytest.mark.parametrize("live", [{"is_live": True}, {"live_status": "is_upcoming"}])
+def test_probe_rejects_live_streams(live):
+    with pytest.raises(SourceError, match="Live streams"):
+        audio.probe(FakeYDL(info={**YT_INFO, **live}), "https://youtu.be/dQw4w9WgXcQ")

@@ -256,3 +256,10 @@ def test_chapters_sorted_with_missing_ends_filled():
 def test_no_chapters():
     assert chapters_from_info({}) == []
     assert chapters_from_info({"chapters": None}) == []
+
+
+def test_infinite_json3_time_is_a_miss():
+    info = _yt(automatic_captions={"en-orig": _fmts("json3", lang="en")})
+    body = b'{"events": [{"tStartMs": Infinity, "dDurationMs": 1, "segs": [{"utf8": "x"}]}]}'
+    with pytest.raises(NoCaptionsError, match="parsed"):
+        fetch(FakeYDL({"https://cap.example/en.json3": body}), info)

@@ -74,7 +74,8 @@ def _hostile_episode(transcript_url=None, enclosure_url="https://media.example/x
 
 @pytest.mark.parametrize("url", ["file:///etc/passwd", "ftp://media.example/a.srt", "data:,x"])
 def test_non_http_transcript_url_is_refused_without_opening(net, url):
-    with pytest.raises(SourceError, match="non-http"):
+    # a miss, so auto mode moves on to the enclosure, but still refused before opening
+    with pytest.raises(NoCaptionsError, match="non-http"):
         feeds.fetch_transcript(_hostile_episode(transcript_url=url))
     assert net.opened == []
 
@@ -93,7 +94,7 @@ def test_final_url_off_http_is_refused(monkeypatch):
         {url: b"1\n00:00:00,000 --> 00:00:01,000\nx\n"}, {url: "file:///etc/passwd"}
     )
     monkeypatch.setattr(feeds, "_OPENER", opener)
-    with pytest.raises(SourceError):
+    with pytest.raises(NoCaptionsError, match="non-http"):
         feeds.fetch_transcript(_hostile_episode(transcript_url=url))
 
 
@@ -101,7 +102,7 @@ def test_oversize_transcript_is_rejected(monkeypatch):
     url = "https://media.example/huge.srt"
     body = b"x" * (feeds.TRANSCRIPT_MAX_BYTES + 1)
     monkeypatch.setattr(feeds, "_OPENER", FakeOpener({url: body}))
-    with pytest.raises(SourceError, match="exceeds"):
+    with pytest.raises(NoCaptionsError, match="exceeds"):
         feeds.fetch_transcript(_hostile_episode(transcript_url=url))
 
 
@@ -143,7 +144,7 @@ def server():
 def test_real_opener_refuses_redirect_off_http(server, location):
     base, routes = server
     routes["/t.srt"] = (302, {"Location": location}, b"")
-    with pytest.raises(SourceError, match="non-http"):
+    with pytest.raises(NoCaptionsError, match="non-http"):
         feeds.fetch_transcript(_hostile_episode(transcript_url=f"{base}/t.srt"))
 
 
@@ -444,3 +445,60 @@ def test_declared_transcript_types_are_listed_even_when_none_is_usable(net):
     assert episode.transcripts == ()  # nothing quotable can use
     assert episode.info().has_transcript is False
     assert episode.info().transcript_types == ["text/html"]  # lower-cased, parameters dropped
+
+
+# --- review fixes: cite links, keys, languages, caps -----------------------------------
+
+
+@pytest.mark.parametrize("url", ["javascript:alert(1)", "file:///etc/passwd", "/relative.mp3"])
+def test_non_http_enclosure_gives_no_cite_url(url):
+    assert feeds.episode_cite(_hostile_episode(enclosure_url=url)) is None
+
+
+def test_http_enclosure_cites_with_a_time_fragment():
+    assert feeds.episode_cite(_hostile_episode()) == "https://media.example/x.mp3#t={t}"
+
+
+def test_same_guid_in_two_feeds_gets_two_keys():
+    a = feeds.Episode(**{**_hostile_episode().__dict__, "feed_url": "https://a.example/feed"})
+    b = feeds.Episode(**{**a.__dict__, "feed_url": "https://b.example/feed"})
+    assert feeds.episode_key(a) != feeds.episode_key(b)
+
+
+def test_enclosure_over_the_cap_is_refused(monkeypatch, tmp_path):
+    url = "https://media.example/x.mp3"
+    monkeypatch.setattr(feeds, "_OPENER", FakeOpener({url: b"x" * 10}))
+    monkeypatch.setattr(feeds, "ENCLOSURE_MAX_BYTES", 4)
+    with pytest.raises(SourceError, match="exceeds 4 bytes"):
+        feeds.download_enclosure(_hostile_episode(enclosure_url=url), tmp_path)
+
+
+def _with_refs(*refs):
+    return feeds.Episode(**{**_hostile_episode().__dict__, "transcripts": refs})
+
+
+def test_transcript_in_another_language_is_not_chosen():
+    ep = _with_refs(feeds.TranscriptRef("https://m.example/a.srt", "srt", "en"))
+    assert feeds.choose_transcript(ep, "fr") is None
+    assert feeds.choose_transcript(ep, "en-GB").language == "en"
+
+
+def test_transcript_language_defaults_to_the_channel_language():
+    body = (
+        b'<rss xmlns:podcast="https://podcastindex.org/namespace/1.0"><channel><title>t</title>'
+        b"<language>fr</language><item><title>e</title><guid>g</guid>"
+        b'<podcast:transcript url="https://m.example/t.srt" type="application/x-subrip"/>'
+        b"</item></channel></rss>"
+    )
+    ep = feeds.parse_feed(body, FEED_URL).episodes[0]
+    assert ep.transcripts[0].language == "fr"
+    assert feeds.choose_transcript(ep, "en") is None
+
+
+@pytest.mark.parametrize("bad", [b"NaN", b"Infinity", b"1e999"])
+def test_non_finite_json_times_are_a_miss(monkeypatch, bad):
+    url = "https://media.example/t.json"
+    body = b'{"segments": [{"startTime": ' + bad + b', "endTime": 1, "body": "x"}]}'
+    monkeypatch.setattr(feeds, "_OPENER", FakeOpener({url: body}))
+    with pytest.raises(NoCaptionsError, match="parsed"):
+        feeds.fetch_transcript(_with_refs(feeds.TranscriptRef(url, "json")))

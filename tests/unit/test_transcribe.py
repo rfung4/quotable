@@ -295,3 +295,15 @@ def test_cpu_fallback_keeps_the_guards_decision(loud_minute):
         ("cpu", False),
     ]
     assert segs
+
+
+@pytest.mark.parametrize(
+    ("code", "want"), [("en-US", "en"), ("EN", "en"), ("en-orig", "en"), ("", None), (None, None)]
+)
+def test_whisper_language_takes_the_caption_spellings(code, want):
+    assert tx.whisper_language(code) == want
+
+
+def test_unknown_whisper_language_is_a_value_error():
+    with pytest.raises(ValueError, match="'xx'"):
+        tx.whisper_language("xx")

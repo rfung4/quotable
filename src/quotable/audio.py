@@ -61,7 +61,11 @@ def url_key(info: dict) -> str:
     video_id = str(info.get("id") or info.get("webpage_url") or "")
     if not video_id:
         raise SourceError("yt-dlp returned no id for this URL.")
-    if not _CLEAN_ID.match(video_id):
+    if extractor == "Generic":
+        # The generic extractor's id is the URL's file name ("master", "audio"), which unrelated
+        # URLs share; the URL itself is what identifies the source.
+        video_id = str(info.get("webpage_url") or info.get("original_url") or video_id)
+    if extractor == "Generic" or not _CLEAN_ID.match(video_id):
         video_id = hashlib.sha256(video_id.encode()).hexdigest()[:16]
     return f"{extractor}-{video_id}"
 
@@ -158,6 +162,11 @@ def probe(ydl: Any, url: str) -> dict:
         raise SourceError(
             "Playlists and channels are not supported.",
             fix="Pass the URL of a single item; loop over items yourself if you need several.",
+        )
+    if info.get("is_live") or info.get("live_status") in ("is_live", "is_upcoming"):
+        raise SourceError(
+            "Live streams are not supported: the download would run until the broadcast ends.",
+            fix="Pass the URL again once the broadcast is over and its recording is up.",
         )
     return info
 

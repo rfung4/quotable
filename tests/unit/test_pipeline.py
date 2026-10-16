@@ -299,6 +299,14 @@ def test_whisper_mode_never_looks_for_captions(settings, youtube, whisper):
     assert youtube.opened == [] and youtube.downloads == 1
 
 
+def test_whisper_language_is_normalised_and_checked_before_the_download(settings, youtube, whisper):
+    out = pipeline.transcribe(YT_URL, mode="whisper", language="EN-us", settings=settings)
+    assert out.transcript.variant == "whisper-en-tiny"
+    with pytest.raises(ValueError, match="'xx'"):
+        pipeline.transcribe(YT_URL, mode="whisper", language="xx", force=True, settings=settings)
+    assert youtube.downloads == 1
+
+
 # --- cache ------------------------------------------------------------------------------
 
 

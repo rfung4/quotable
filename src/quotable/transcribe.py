@@ -141,6 +141,20 @@ def _vad_off_warning(vad_s: float, loud_s: float) -> str:
     )
 
 
+def whisper_language(code: str | None) -> str | None:
+    """The base code Whisper takes ('en-US', 'EN', 'en-orig' → 'en'), as the caption paths
+    accept those spellings; a code Whisper doesn't know is a ValueError before any download."""
+    if not code:
+        return None
+    base = code.removesuffix("-orig").split("-")[0].lower()
+    from faster_whisper import tokenizer
+
+    known = getattr(tokenizer, "_LANGUAGE_CODES", None)
+    if known is not None and base not in known:
+        raise ValueError(f"language={code!r} is not a language Whisper knows; pass e.g. 'en'.")
+    return base
+
+
 def _decode(path: Path):
     from faster_whisper.audio import decode_audio
 
