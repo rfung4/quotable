@@ -20,9 +20,6 @@ build/
 .pytest_cache/
 .ruff_cache/
 
-# Benchmark output (scripts/bench.py)
-bench.md
-
 # Evaluation artefacts (evals/): generated media, references, results
 evals/media/
 evals/refs/

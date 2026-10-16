@@ -139,21 +139,20 @@ See [docs/notes/mcp-stdio-subprocess.md](docs/notes/mcp-stdio-subprocess.md).
 
 ## Benchmark
 
-Measured with `scripts/bench.py`. Realtime is audio duration divided by wall
-time; cached is a second call for the same variant.
+Measured with `python -m evals.run` (October 2026) on NVIDIA GeForce RTX 3070 (8 GB, driver 595.84) · AMD Ryzen 9 7950X3D 16-Core Processor (32 threads) · 30 GB RAM · faster-whisper 1.2.1.
+Audio is the decoded length; load is the model load; wall is one `transcribe` call
+after that, on the already downloaded audio; realtime is audio divided by wall; cached
+is a second call for the same variant.
 
-<!-- TODO(bench): run `uv run python scripts/bench.py <1h recording> --models base,turbo --devices cpu,cuda --out bench.md`
-     on the RTX 3070 and replace the pending rows. Owner: Ross. -->
+| Source | Model | Device | Audio | Load | Wall | Realtime | Cached |
+|---|---|---|---|---|---|---|---|
+| *Charles Ponzi's scheme (plus a new scam)* (podcast feed, 29.0 min) | base | cpu | 29.0 min | 0.9 s | 66.9 s | 26× | 0.02 s |
+| same episode | turbo | cuda | 29.0 min | 1.4 s | 40.5 s | 43× | 0.02 s |
+| *The power of believing that you can improve \| Carol Dweck \| TED* (YouTube, 10.4 min) | captions | - | 10.4 min | - | 3.6 s | 176× | 1.46 s |
 
-| Source | Model | Device | Audio | Wall | Realtime | Cached |
-|--------|-------|--------|-------|------|----------|--------|
-| jfk.flac (test clip) | tiny | cpu | 11 s | 0.9 s | 11.9x | 0.00 s |
-| ~1 h recording | base | cpu | pending | pending | pending | pending |
-| ~1 h recording | turbo | cuda | pending | pending | pending | pending |
-| captioned video | captions | - | pending | pending | pending | pending |
+Fetched live from the feed, the `turbo` row took 44.5 s including the download.
 
-The `tiny` row was measured on a 32-core machine; the first run includes
-loading the model.
+The full matrix (every input kind, four models, both devices, the long-run scenarios) is in [`evals/README.md`](evals/README.md).
 
 ## Why not one of the others
 

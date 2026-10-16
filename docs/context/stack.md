@@ -31,7 +31,7 @@
 | CI | GitHub Actions: lint, unit matrix 3.10 to 3.14, integration on 3.12 with a Hugging Face cache |
 | Release | Tag `v*` → version check → `uv build` → PyPI trusted publishing (OIDC, no token) |
 | Registry | `server.json` validated by `scripts/check_server_json.py`; published with `mcp-publisher` |
-| Benchmark | `scripts/bench.py` |
+| Benchmark | `python -m evals.run` then `python -m evals.report --readme` (the eval harness, `evals/README.md`) |
 
 ## External Services
 

@@ -21,14 +21,15 @@ uv run python -m evals.run
 uv run python -m evals.score
 uv run python -m evals.scenarios
 uv run python -m evals.mcp_probe
+uv run python -m evals.report
 ```
 
 In order: generate the local media and validate the manifest against the live sources;
 synthesise the TTS dialogues (each turn is cached, so a re-run never re-bills); download
 each URL and feed entry's audio once into `evals/media/cache/` and write the `large-v3`
 references; run the matrix; score it; run the long-run scenarios on an idle GPU;
-probe the MCP surface of the built wheel. Each has `--help`, and each but the runner has a
-`--check` or `--validate` that only verifies what exists.
+probe the MCP surface of the built wheel; render the tables. Each has `--help`, and each but
+the runner has a `--check` or `--validate` that only verifies what exists.
 
 ## The matrix
 
@@ -189,3 +190,43 @@ writes `evals/results/mcp_surface.json`: tools with schemas and annotations, res
 server instructions and the round trip's checks. `--command "<serve command>"` probes
 another server. `--check` replays it together with `evals/results/mcp_checklist.md`, the in-client
 checklist sat in Claude Code against the repo's `.mcp.json`, which must have no open item.
+
+## Report
+
+`python -m evals.report` writes `<out>/report.md` with the hardware line, the corpus and its
+licences, a summary per model and device, one results table per input kind, captions against
+the oracle, diarization, the scenarios and the MCP checklist, and pastes the same tables into
+the `MERGE_START(TABLES)` block of the local report (`docs/report/quotable-eval.md`, not
+tracked). `--readme` rewrites the README's Benchmark section from the manifest's `readme_row`
+entries. `--check` requires the report to name every cell with current tables, the README to
+have no pending benchmark row, and nothing tracked to mention the deleted benchmark script.
+
+## Results (2026-10-15 and 16, RTX 3070)
+
+The public-safe summary of the last full run; the verdict and the bug list are in the local
+report.
+
+- 211 cells, 197 pass, 14 fail, 0 skipped, 0 crashes. The 8 `error` rows are the silence clip,
+  refused by the store as designed. All 11 live-download cells pass.
+- Median normalised WER against the `large-v3` oracle on recordings of 4 min and up, `cpu` /
+  `cuda`: `tiny` 0.073 / 0.069, `base` 0.053 / 0.056, `small` 0.041 / 0.040, `turbo`
+  0.035 / 0.047. Against the exact TTS scripts `turbo` is 0.03–0.04. Worst non-`tiny` cell:
+  `base` on the Spanish TEDx talk, 0.154.
+- Median realtime on the same recordings, `cpu` / `cuda`: `tiny` 48× / 86×, `base` 26× / 74×,
+  `small` 10× / 44×, `turbo` 5× / 37×. Peak VRAM 364 / 460 / 1 004 / 2 412 MB by size, 4 304 MB
+  with diarization. Peak RAM grows with audio length, about 1.04 MB per second above 20 min
+  (11.4 GB for 3 h).
+- The 14 fails: 6 `coverage` on the NASA Artemis call (the VAD keeps 147 s of 636 s, every model
+  gets a quarter of the words), 7 `drift` on `turbo` TTS cells (word starts 0.15–0.26 s early),
+  1 `language` on the TED captions cell (the default track is Albanian when yt-dlp reports no
+  video language).
+- Captions against the oracle: OCW manual 0.10, NASA auto 0.04, TEDx Spanish manual 0.07,
+  Darknet transcript tags 0.11 and 0.15, Podcasting 2.0 tag 0.10. The Darknet tags sit 193 s
+  and 121 s ahead of the downloaded audio (dynamic ad insertion).
+- Diarization on the dialogues: speaker accuracy 1.000, 0.970, 0.995; the single-speaker lecture
+  gets two labels.
+- Scenarios 9 of 9: Lex 3 h in 311 s, the loop in 594 s, memory growth within 3 %, resume after
+  a cancel with 0 and 1 words lost, paging exact.
+- MCP: the wheel round trip passes; the in-client checklist passes 6 of 8. The untrusted-content
+  notice is not forwarded to the model by Claude Code (it reads the structured content), and
+  `@quotable:transcript://…` does not attach.
