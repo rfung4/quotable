@@ -4619,7 +4619,7 @@ requires-dist = [
     { name = "av", specifier = ">=11,<19" },
     { name = "faster-whisper", specifier = ">=1.2.1" },
     { name = "filelock", specifier = ">=3.10" },
-    { name = "mcp", specifier = ">=2.3,<3" },
+    { name = "mcp", specifier = ">=2.3,<2.4" },
     { name = "pyannote-audio", marker = "extra == 'diarize'", specifier = ">=4" },
     { name = "pydantic", specifier = ">=2.12" },
     { name = "yt-dlp", extras = ["default"], specifier = ">=2026.8.19" },

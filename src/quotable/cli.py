@@ -78,11 +78,21 @@ def _serve(args: argparse.Namespace) -> None:
     server.run()
 
 
-_COMMANDS = {"get": _get, "info": _info, "serve": _serve}
+def _daemon(args: argparse.Namespace) -> None:
+    from quotable import daemon
+
+    daemon.run()
+
+
+_COMMANDS = {"get": _get, "info": _info, "serve": _serve, "daemon": _daemon}
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv == ["daemon"]:  # spawned by the shim; off argparse, whose SUPPRESS still lists it
+        args = argparse.Namespace(command="daemon")
+    else:
+        args = _parser().parse_args(argv)
     try:
         _COMMANDS[args.command](args)
     except QuotableError as exc:
@@ -96,3 +106,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("quotable: interrupted; rerun to resume from the last segment.", file=sys.stderr)
         return 130
     return 0
+
+
+if __name__ == "__main__":  # the shim spawns ``python -m quotable.cli daemon``
+    sys.exit(main())

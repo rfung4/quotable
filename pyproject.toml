@@ -22,7 +22,7 @@ classifiers = [
   "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
 dependencies = [
-  "mcp>=2.3,<3",
+  "mcp>=2.3,<2.4",  # daemon.py uses MCPServer._lowlevel_server (private)
   "yt-dlp[default]>=2026.8.19",
   "faster-whisper>=1.2.1",
   "av>=11,<19",

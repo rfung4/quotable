@@ -101,6 +101,13 @@ def runtime_dir(env: Mapping[str, str] | None = None) -> Path:
     return path
 
 
+def log_path(env: Mapping[str, str] | None = None) -> Path:
+    """Where the shared process's stderr goes; it has no terminal and no MCP log."""
+    env = os.environ if env is None else env
+    state = env.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
+    return Path(state) / "quotable" / "daemon.log"
+
+
 def socket_path(env: Mapping[str, str] | None = None) -> Path:
     env = os.environ if env is None else env
     return runtime_dir(env) / f"{socket_key(env)}.sock"
