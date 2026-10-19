@@ -15,6 +15,7 @@ from mcp.server import MCPServer
 from mcp.types import LATEST_PROTOCOL_VERSION
 
 from quotable import daemon
+from quotable import server as server_module
 from quotable.config import Settings
 from quotable.models import QuotableError
 from quotable.server import create_server
@@ -442,3 +443,88 @@ def test_daemon_command_is_hidden_from_help():
         [sys.executable, "-m", "quotable.cli", "--help"], capture_output=True, text=True
     )
     assert "daemon" not in proc.stdout
+
+
+# --- per-session working directory ------------------------------------------------
+
+
+@pytest.mark.parametrize("hello", [{"cwd": "relative/dir"}, {"cwd": ""}, {}, {"cwd": 3}, []])
+def test_hello_without_an_absolute_cwd_is_refused(sock, hello):
+    d = _daemon(MCPServer("t"), sock)
+
+    async def main():
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(d.serve)
+            await _wait_for(sock)
+            stream = await anyio.connect_unix(sock)
+            await stream.send(json.dumps(hello).encode() + b"\n")
+            with anyio.fail_after(2), pytest.raises(anyio.EndOfStream):
+                await stream.receive()
+            tg.cancel_scope.cancel()
+
+    anyio.run(main)
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        ("clip.wav", "/work/a/clip.wav"),
+        ("../b/clip.wav", "/work/a/../b/clip.wav"),
+        ("/abs/clip.wav", "/abs/clip.wav"),
+        ("~/clip.wav", str(Path("~/clip.wav").expanduser())),
+        ("https://example.com/clip.wav", "https://example.com/clip.wav"),
+        ("http://example.com/feed.xml", "http://example.com/feed.xml"),
+    ],
+)
+def test_session_cwd_resolves_relative_sources(source, expected):
+    token = daemon.SESSION_CWD.set("/work/a")
+    try:
+        assert server_module.session_source(source) == expected
+    finally:
+        daemon.SESSION_CWD.reset(token)
+
+
+def test_no_session_cwd_leaves_sources_alone():
+    # In-process serving (QUOTABLE_DAEMON=off): the process cwd is the session's.
+    assert server_module.session_source("clip.wav") == "clip.wav"
+
+
+def test_each_connection_resolves_against_its_own_cwd(sock, tmp_path, monkeypatch):
+    seen = []
+
+    def fake_media_info(source, episode=None):
+        seen.append(source)
+        raise QuotableError(f"no file at {source}", fix="check the path")
+
+    def fake_transcribe(source, **kwargs):
+        seen.append(source)
+        raise QuotableError(f"no file at {source}", fix="check the path")
+
+    monkeypatch.setattr(server_module.pipeline, "media_info", fake_media_info)
+    monkeypatch.setattr(server_module.pipeline, "transcribe", fake_transcribe)
+    app = create_server(
+        Settings(output_dir=tmp_path, model="tiny", device="cpu", compute_type="int8")
+    )
+    d = _daemon(app, sock)
+
+    async def main():
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(d.serve)
+            await _wait_for(sock)
+            a = await Client.connect(sock, cwd="/proj/a")
+            b = await Client.connect(sock, cwd="/proj/b")
+            await a.initialize()
+            await b.initialize()
+            ra = await a.call(
+                2, "tools/call", {"name": "media_info", "arguments": {"source": "x.mp3"}}
+            )
+            rb = await b.call(
+                2, "tools/call", {"name": "transcribe", "arguments": {"source": "y.mp3"}}
+            )
+            tg.cancel_scope.cancel()
+        return ra, rb
+
+    ra, rb = anyio.run(main)
+    assert seen == ["/proj/a/x.mp3", "/proj/b/y.mp3"]
+    assert "/proj/a/x.mp3" in ra["result"]["content"][0]["text"]
+    assert ra["result"]["isError"] and rb["result"]["isError"]

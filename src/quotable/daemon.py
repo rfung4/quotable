@@ -20,6 +20,7 @@ import os
 import sys
 from collections.abc import Callable
 from contextlib import suppress
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Any
@@ -43,6 +44,9 @@ from quotable.models import QuotableError
 MAX_LINE = 16 * 1024 * 1024
 TICK_S = 1.0
 BYE = "quotable_bye"
+# The connection's hello cwd; request handlers inherit it from the connection's task.
+# ``None`` when serving in-process, where the process cwd is the session's.
+SESSION_CWD: ContextVar[str | None] = ContextVar("quotable_session_cwd", default=None)
 
 
 def take_lock(sock: Path) -> IO[str] | None:
@@ -196,7 +200,12 @@ class Daemon:
                         return
                 if conn.reading.cancel_called:
                     await anyio.sleep_forever()  # the bye reaches it with a count of 0
-                conn.cwd = hello.get("cwd") if isinstance(hello, dict) else None
+                cwd = hello.get("cwd") if isinstance(hello, dict) else None
+                if not (isinstance(cwd, str) and os.path.isabs(cwd)):
+                    _log(f"refusing a connection whose hello has no absolute cwd: {hello!r}")
+                    return
+                conn.cwd = cwd
+                SESSION_CWD.set(cwd)
                 await self._session(conn, buffered)
         finally:
             self.connections.discard(conn)
