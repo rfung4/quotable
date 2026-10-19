@@ -8,7 +8,7 @@ import pytest
 
 from quotable import transcribe as tx
 from quotable.config import Settings
-from quotable.models import CancelledError, TranscriptionError
+from quotable.models import CancelledError, GpuBusyError, TranscriptionError
 
 SR = tx.SAMPLE_RATE
 
@@ -47,9 +47,12 @@ class FakeModel:
     built: list[tuple] = []
     calls: list[dict] = []
     fail_load_on: set[str] = set()
+    fail_start_on: set[str] = set()
     fail_first_segment_on: set[str] = set()
+    fail_second_segment_on: set[str] = set()
     after_vad = 10.0  # what the VAD keeps on a vad_filter=True call
     load_error = RuntimeError("CUDA failed with error no CUDA-capable device is detected")
+    run_error = RuntimeError("Unable to load any of {libcudnn_ops.so.9.1.0, libcudnn_ops.so}")
 
     def __init__(self, name, device, compute_type):
         if device in self.fail_load_on:
@@ -59,11 +62,16 @@ class FakeModel:
 
     def transcribe(self, audio, **kwargs):
         FakeModel.calls.append({"device": self.device, **kwargs})
+        if self.device in self.fail_start_on:
+            raise self.run_error
 
         def gen():
             if self.device in self.fail_first_segment_on:
-                raise RuntimeError("Unable to load any of {libcudnn_ops.so.9.1.0, libcudnn_ops.so}")
-            yield from SEGMENTS
+                raise self.run_error
+            yield SEGMENTS[0]
+            if self.device in self.fail_second_segment_on:
+                raise self.run_error
+            yield from SEGMENTS[1:]
 
         kept = FakeModel.after_vad if kwargs.get("vad_filter") else 10.0
         return gen(), FWInfo(duration_after_vad=kept)
@@ -73,6 +81,7 @@ class FakeModel:
 def fake_whisper(monkeypatch):
     FakeModel.built, FakeModel.calls = [], []
     FakeModel.fail_load_on, FakeModel.fail_first_segment_on = set(), set()
+    FakeModel.fail_start_on, FakeModel.fail_second_segment_on = set(), set()
     FakeModel.after_vad = 10.0
     monkeypatch.setattr(tx, "_whisper_model_cls", lambda: FakeModel)
     monkeypatch.setattr(tx, "_decode", lambda path: np.zeros(SR * 10, dtype=np.float32))
@@ -476,3 +485,67 @@ def test_queue_run_after_waiting_transcribes(fast_queue):
     thread.join(5)
     assert len(box["value"]) == len(SEGMENTS)
     assert not tx.INFERENCE_LOCK.locked()
+
+
+# --- out of memory is not a broken GPU -------------------------------------------------
+
+OOM_TEXTS = [
+    "CUDA failed with error out of memory",
+    "cuBLAS failed with status CUBLAS_STATUS_ALLOC_FAILED",
+]
+
+
+@pytest.fixture(params=OOM_TEXTS)
+def oom(request, monkeypatch):
+    error = RuntimeError(request.param)
+    monkeypatch.setattr(FakeModel, "load_error", error)
+    monkeypatch.setattr(FakeModel, "run_error", error)
+    return error
+
+
+def _assert_gpu_busy(err):
+    assert isinstance(err.value, GpuBusyError)
+    assert not tx._cuda_broken
+    assert tx._model is None  # VRAM handed back, though the run held INFERENCE_LOCK
+    assert "QUOTABLE_DEVICE=cpu" in err.value.fix
+    assert not tx.INFERENCE_LOCK.locked()
+
+
+@pytest.mark.parametrize("site", ["load", "start", "first_segment"])
+def test_out_of_memory_raises_gpu_busy_and_keeps_the_gpu(oom, site, capsys):
+    getattr(FakeModel, f"fail_{site}_on").add("cuda")
+    s = _settings(device="cuda", model="turbo")
+    with pytest.raises(GpuBusyError) as err:
+        _run(s)
+    _assert_gpu_busy(err)
+    assert all(device == "cuda" for _, device, _ in FakeModel.built)  # no CPU fallback
+    assert "falling back" not in capsys.readouterr().err
+
+    getattr(FakeModel, f"fail_{site}_on").clear()
+    _, segs = _run(s)  # the GPU is free again: the next run uses it
+    assert segs and FakeModel.built[-1] == ("turbo", "cuda", "float16")
+
+
+def test_out_of_memory_mid_run_keeps_the_segments_so_far(oom):
+    FakeModel.fail_second_segment_on = {"cuda"}
+    got = []
+    with pytest.raises(GpuBusyError) as err:
+        with tx.transcribe_iter(Path("a.flac"), settings=_settings(device="cuda")) as run:
+            for seg in run:
+                got.append(seg)
+    _assert_gpu_busy(err)
+    assert [s.text for s in got] == ["ask not"]
+
+
+def test_out_of_memory_on_cpu_is_not_gpu_busy(monkeypatch):
+    monkeypatch.setattr(FakeModel, "run_error", RuntimeError("std::bad_alloc: out of memory"))
+    FakeModel.fail_start_on = {"cpu"}
+    with pytest.raises(TranscriptionError):
+        _run(_settings(device="cpu"))
+
+
+def test_out_of_memory_is_told_apart_from_a_broken_cuda(capsys):
+    FakeModel.fail_first_segment_on = {"cuda"}  # the default run_error: a missing cuDNN
+    _run(_settings(device="cuda"))
+    assert tx._cuda_broken
+    assert "retrying on CPU" in capsys.readouterr().err

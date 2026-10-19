@@ -16,10 +16,19 @@ from pathlib import Path
 from typing import Any
 
 from quotable.config import Settings
-from quotable.models import CancelledError, Segment, TranscriptionError, Word
+from quotable.models import (
+    CancelledError,
+    GpuBusyError,
+    QuotableError,
+    Segment,
+    TranscriptionError,
+    Word,
+)
 
 SAMPLE_RATE = 16000
 _CUDA_HINTS = ("cuda", "cudnn", "cublas", "libcu", "gpu")
+# Checked before _CUDA_HINTS, which these texts also match.
+_OOM_HINTS = ("out of memory", "alloc_failed")
 
 # The VAD guard (QUOTABLE_VAD=auto). Silero keeps 1.0–1.4× the audio above -50 dBFS on every
 # speech recording in the eval corpus (it pads its chunks), and 0.29× on a space-to-ground radio
@@ -46,6 +55,22 @@ def _whisper_model_cls():
 def _is_cuda_failure(exc: BaseException) -> bool:
     text = f"{type(exc).__name__} {exc}".lower()
     return any(hint in text for hint in _CUDA_HINTS)
+
+
+def _is_out_of_memory(exc: BaseException) -> bool:
+    text = f"{type(exc).__name__} {exc}".lower()
+    return any(hint in text for hint in _OOM_HINTS)
+
+
+def _gpu_busy(exc: BaseException) -> GpuBusyError:
+    """Drop the model so its VRAM goes back; the GPU itself is fine, so ``_cuda_broken`` stays.
+
+    Not ``unload_model()``: that is a no-op while a run holds ``INFERENCE_LOCK``, as ours does.
+    """
+    global _model
+    with _MODEL_LOCK:
+        _model = None
+    return GpuBusyError(f"The GPU ran out of memory: {exc}")
 
 
 def _warn(msg: str) -> None:
@@ -85,6 +110,10 @@ def get_model(settings: Settings, *, force_cpu: bool = False):
         try:
             model = cls(settings.model, device=device, compute_type=compute_type)
         except Exception as exc:
+            if device == "cuda" and _is_out_of_memory(exc):
+                raise GpuBusyError(
+                    f"The GPU ran out of memory loading {settings.model!r}: {exc}"
+                ) from exc
             if device != "cuda" or not _is_cuda_failure(exc):
                 raise TranscriptionError(
                     f"Could not load Whisper model {settings.model!r}: {exc}"
@@ -307,9 +336,11 @@ class WhisperRun:
         try:
             try:
                 self._start()
-            except TranscriptionError:
+            except QuotableError:
                 raise
             except Exception as exc:
+                if self._on_gpu() and _is_out_of_memory(exc):
+                    raise _gpu_busy(exc) from exc
                 if not (self.settings.device == "cuda" and _is_cuda_failure(exc)):
                     raise TranscriptionError(f"Whisper failed to start: {exc}") from exc
                 self._fall_back(exc)
@@ -318,6 +349,9 @@ class WhisperRun:
             INFERENCE_LOCK.release()
             raise
         return self
+
+    def _on_gpu(self) -> bool:
+        return self.settings.device == "cuda" and not _cuda_broken
 
     def _fall_back(self, exc: BaseException) -> None:
         _warn(f"CUDA failed during inference ({exc}); retrying on CPU.")
@@ -332,6 +366,8 @@ class WhisperRun:
             except StopIteration:
                 return
             except Exception as exc:
+                if self._on_gpu() and _is_out_of_memory(exc):
+                    raise _gpu_busy(exc) from exc  # the segments so far are already saved
                 # cuDNN/cuBLAS load lazily, so a broken GPU often fails on the first segment.
                 if self._yielded or not (
                     self.settings.device == "cuda" and _is_cuda_failure(exc) and not _cuda_broken

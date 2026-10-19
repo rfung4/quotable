@@ -118,6 +118,15 @@ class TranscriptionError(QuotableError):
     default_fix = "Retry with a smaller QUOTABLE_MODEL or QUOTABLE_DEVICE=cpu."
 
 
+class GpuBusyError(QuotableError):
+    """The GPU ran out of memory: another program holds VRAM. Transient, unlike a broken CUDA."""
+
+    default_fix = (
+        "Another program is using the GPU's memory; call again once it is free, "
+        "or set QUOTABLE_DEVICE=cpu."
+    )
+
+
 class DiarizationUnavailableError(QuotableError):
     default_fix = "pip install 'quotable-mcp[diarize]' and set QUOTABLE_HF_TOKEN."
 
