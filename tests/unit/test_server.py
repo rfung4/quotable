@@ -50,13 +50,18 @@ class FakePipeline:
         self.emitted = 0
         self.stopped = threading.Event()  # set when the fake leaves its loop for any reason
         self.cached = False
+        self.waits = 0  # times to report waiting behind another run before starting
 
-    def __call__(self, source, *, on_segment=None, cancel=None, settings=None, **kwargs):
+    def __call__(
+        self, source, *, on_segment=None, on_wait=None, cancel=None, settings=None, **kwargs
+    ):
         self.calls.append({"source": source, **kwargs})
         self.cancel = cancel
         try:
             if self.error:
                 raise self.error
+            for _ in range(self.waits):
+                on_wait()
             for seg in self.segments:
                 if self.delay:
                     time.sleep(self.delay)
@@ -232,6 +237,25 @@ def test_progress_notifications_carry_the_newest_line(settings, fake):
     assert [p for p, _, _ in seen] == [9.5, 19.5, 29.5]
     assert all(total == 29.5 for _, total, _ in seen)
     assert [m for _, _, m in seen] == [s.text[: server.PROGRESS_CHARS] for s in fake.segments]
+
+
+def test_queue_wait_is_reported_as_progress_that_never_goes_back(settings, fake):
+    fake.segments = _segments(2)
+    fake.waits = 1
+    seen = []
+
+    async def on_progress(progress, total, message):
+        seen.append((progress, total, message))
+
+    async def scenario(client):
+        return await client.call_tool(
+            "transcribe", {"source": SOURCE}, progress_callback=on_progress
+        )
+
+    _run(settings, scenario)
+
+    assert seen[0] == (0.0, None, server.QUEUE_MESSAGE)
+    assert [p for p, _, _ in seen[1:]] == [9.5, 19.5]
 
 
 def test_a_typed_failure_is_a_tool_error_with_the_fix(settings, fake):

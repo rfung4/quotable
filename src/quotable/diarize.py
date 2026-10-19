@@ -9,7 +9,7 @@ from __future__ import annotations
 import bisect
 import threading
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -17,7 +17,7 @@ from typing import Any
 import quotable.transcribe as tx
 from quotable.config import Settings
 from quotable.models import DiarizationUnavailableError, Segment, Word
-from quotable.transcribe import INFERENCE_LOCK, SAMPLE_RATE
+from quotable.transcribe import INFERENCE_LOCK, SAMPLE_RATE, acquire_inference
 
 MODEL_ID = "pyannote/speaker-diarization-community-1"
 TERMS_URL = f"https://huggingface.co/{MODEL_ID}"
@@ -107,10 +107,18 @@ def _annotation(output: Any) -> Any:
     return output
 
 
-def diarize(audio: Path, settings: Settings) -> list[Turn]:
+def diarize(
+    audio: Path,
+    settings: Settings,
+    cancel: threading.Event | None = None,
+    on_wait: Callable[[], None] | None = None,
+) -> list[Turn]:
     pipeline = get_pipeline(settings)
-    with INFERENCE_LOCK:
+    acquire_inference(cancel, on_wait)
+    try:
         output = pipeline(_waveform(audio))
+    finally:
+        INFERENCE_LOCK.release()
     turns = [
         Turn(start=float(seg.start), end=float(seg.end), speaker=str(label))
         for seg, _, label in _annotation(output).itertracks(yield_label=True)

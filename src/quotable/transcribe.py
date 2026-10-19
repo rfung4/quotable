@@ -3,6 +3,7 @@
 ``transcribe_iter`` returns a ``WhisperRun``: enter it to start (it takes the process-wide
 inference lock, so two runs never share an 8 GB card), iterate it for ``Segment``s as
 they are decoded, and leave it to release the lock — leaving early is how cancel works.
+A run queued behind another reports it through ``on_wait`` and can be cancelled while it waits.
 """
 
 from __future__ import annotations
@@ -10,12 +11,12 @@ from __future__ import annotations
 import ctypes
 import sys
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
 from quotable.config import Settings
-from quotable.models import Segment, TranscriptionError, Word
+from quotable.models import CancelledError, Segment, TranscriptionError, Word
 
 SAMPLE_RATE = 16000
 _CUDA_HINTS = ("cuda", "cudnn", "cublas", "libcu", "gpu")
@@ -29,6 +30,7 @@ MIN_LOUD_S = 30.0  # too little sound to judge the VAD by
 MIN_VAD_SHARE = 0.5
 
 INFERENCE_LOCK = threading.Lock()
+QUEUE_POLL_S = 0.5  # how often a queued run checks its cancel event
 _MODEL_LOCK = threading.Lock()
 _model: tuple[tuple[str, str, str], Any] | None = None
 _cuda_broken = False
@@ -118,6 +120,25 @@ def unload_model() -> None:
         _trim_heap()
     finally:
         INFERENCE_LOCK.release()
+
+
+def acquire_inference(
+    cancel: threading.Event | None = None, on_wait: Callable[[], None] | None = None
+) -> None:
+    """Take ``INFERENCE_LOCK``, queueing behind a run that holds it.
+
+    A queued caller hears about it once through ``on_wait``; setting ``cancel`` while it waits
+    raises ``CancelledError`` with nothing held.
+    """
+    if INFERENCE_LOCK.acquire(blocking=False):
+        return
+    if on_wait is not None:
+        on_wait()
+    while not INFERENCE_LOCK.acquire(timeout=QUEUE_POLL_S):
+        if cancel is not None and cancel.is_set():
+            raise CancelledError(
+                "Cancelled while waiting behind another transcription; nothing was transcribed."
+            )
 
 
 def _arm_unload(ttl: float) -> None:
@@ -213,11 +234,22 @@ def _to_segment(seg: Any) -> Segment:
 
 
 class WhisperRun:
-    def __init__(self, audio: Path, language: str | None, start_s: float, settings: Settings):
+    def __init__(
+        self,
+        audio: Path,
+        language: str | None,
+        start_s: float,
+        settings: Settings,
+        *,
+        cancel: threading.Event | None = None,
+        on_wait: Callable[[], None] | None = None,
+    ):
         self.audio_path = audio
         self.requested_language = language
         self.start_s = start_s
         self.settings = settings
+        self.cancel = cancel
+        self.on_wait = on_wait
         self.language: str | None = None
         self.duration: float | None = None
         self._segments: Iterator[Any] | None = None
@@ -271,7 +303,7 @@ class WhisperRun:
         self.duration = info.duration
 
     def __enter__(self) -> WhisperRun:
-        INFERENCE_LOCK.acquire()
+        acquire_inference(self.cancel, self.on_wait)
         try:
             try:
                 self._start()
@@ -324,6 +356,11 @@ def transcribe_iter(
     language: str | None = None,
     start_s: float = 0.0,
     settings: Settings | None = None,
+    *,
+    cancel: threading.Event | None = None,
+    on_wait: Callable[[], None] | None = None,
 ) -> WhisperRun:
     """``with transcribe_iter(path) as run: for seg in run: …`` — see the module docstring."""
-    return WhisperRun(audio, language, start_s, settings or Settings.from_env())
+    return WhisperRun(
+        audio, language, start_s, settings or Settings.from_env(), cancel=cancel, on_wait=on_wait
+    )

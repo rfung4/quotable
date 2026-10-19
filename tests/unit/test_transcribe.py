@@ -1,3 +1,5 @@
+import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -6,7 +8,7 @@ import pytest
 
 from quotable import transcribe as tx
 from quotable.config import Settings
-from quotable.models import TranscriptionError
+from quotable.models import CancelledError, TranscriptionError
 
 SR = tx.SAMPLE_RATE
 
@@ -371,3 +373,106 @@ def test_whisper_language_takes_the_caption_spellings(code, want):
 def test_unknown_whisper_language_is_a_value_error():
     with pytest.raises(ValueError, match="'xx'"):
         tx.whisper_language("xx")
+
+
+# --- the GPU queue ------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fast_queue(monkeypatch):
+    monkeypatch.setattr(tx, "QUEUE_POLL_S", 0.02)
+
+
+def _in_thread(fn):
+    box = {}
+
+    def target():
+        try:
+            box["value"] = fn()
+        except BaseException as exc:  # handed to the test thread
+            box["error"] = exc
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    return thread, box
+
+
+def test_queue_takes_a_free_lock_without_reporting():
+    waits = []
+    tx.acquire_inference(threading.Event(), lambda: waits.append(1))
+    try:
+        assert tx.INFERENCE_LOCK.locked() and waits == []
+    finally:
+        tx.INFERENCE_LOCK.release()
+
+
+def test_queue_waits_behind_a_run_and_reports_it_once(fast_queue):
+    waits = []
+    tx.INFERENCE_LOCK.acquire()
+    thread, box = _in_thread(
+        lambda: tx.acquire_inference(threading.Event(), lambda: waits.append(1))
+    )
+    time.sleep(0.2)
+    assert waits == [1] and thread.is_alive()
+    tx.INFERENCE_LOCK.release()
+    thread.join(2)
+    assert not thread.is_alive() and "error" not in box
+    assert tx.INFERENCE_LOCK.locked()  # now the waiter's
+    tx.INFERENCE_LOCK.release()
+
+
+def test_queue_cancel_while_waiting_gives_up_promptly(fast_queue):
+    cancel = threading.Event()
+    tx.INFERENCE_LOCK.acquire()
+    try:
+        thread, box = _in_thread(lambda: tx.acquire_inference(cancel))
+        time.sleep(0.1)
+        start = time.monotonic()
+        cancel.set()
+        thread.join(2)
+        assert time.monotonic() - start < 0.5
+        assert isinstance(box.get("error"), CancelledError)
+        assert "waiting behind another transcription" in box["error"].message
+    finally:
+        tx.INFERENCE_LOCK.release()
+    assert not tx.INFERENCE_LOCK.locked()  # the cancelled waiter took nothing
+
+
+def test_queue_cancelled_run_never_loads_or_holds_the_lock(fast_queue):
+    cancel = threading.Event()
+    waits = []
+    tx.INFERENCE_LOCK.acquire()
+    try:
+
+        def run():
+            with tx.transcribe_iter(
+                Path("a.flac"), settings=_settings(), cancel=cancel, on_wait=lambda: waits.append(1)
+            ):
+                pass
+
+        thread, box = _in_thread(run)
+        time.sleep(0.1)
+        cancel.set()
+        thread.join(2)
+        assert isinstance(box.get("error"), CancelledError) and waits == [1]
+        assert FakeModel.built == []
+    finally:
+        tx.INFERENCE_LOCK.release()
+    assert not tx.INFERENCE_LOCK.locked()
+
+
+def test_queue_run_after_waiting_transcribes(fast_queue):
+    tx.INFERENCE_LOCK.acquire()
+
+    def run():
+        with tx.transcribe_iter(
+            Path("a.flac"), settings=_settings(), cancel=threading.Event()
+        ) as r:
+            return list(r)
+
+    thread, box = _in_thread(run)
+    time.sleep(0.1)
+    tx.INFERENCE_LOCK.release()
+    thread.join(5)
+    assert len(box["value"]) == len(SEGMENTS)
+    assert not tx.INFERENCE_LOCK.locked()
