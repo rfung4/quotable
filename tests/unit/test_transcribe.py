@@ -76,12 +76,21 @@ def fake_whisper(monkeypatch):
     monkeypatch.setattr(tx, "_decode", lambda path: np.zeros(SR * 10, dtype=np.float32))
     monkeypatch.setattr(tx, "_model", None)
     monkeypatch.setattr(tx, "_cuda_broken", False)
+    monkeypatch.setattr(tx, "_unload_timer", None)
+    yield
+    if tx._unload_timer is not None:
+        tx._unload_timer.cancel()
 
 
-def _settings(device="cpu", model="base", compute_type=None, vad="auto") -> Settings:
+def _settings(device="cpu", model="base", compute_type=None, vad="auto", model_ttl=300.0):
     compute_type = compute_type or ("float16" if device == "cuda" else "int8")
     return Settings(
-        output_dir=Path("/tmp/q"), model=model, device=device, compute_type=compute_type, vad=vad
+        output_dir=Path("/tmp/q"),
+        model=model,
+        device=device,
+        compute_type=compute_type,
+        vad=vad,
+        model_ttl=model_ttl,
     )
 
 
@@ -106,6 +115,61 @@ def test_a_different_model_replaces_the_singleton():
     tx.get_model(_settings(model="tiny"))
     assert [b[0] for b in FakeModel.built] == ["base", "tiny"]
     assert tx._model[0] == ("tiny", "cpu", "int8")
+
+
+# --- idle unload (QUOTABLE_MODEL_TTL) -------------------------------------------------
+
+
+def test_a_run_arms_the_idle_timer_and_firing_it_drops_the_model():
+    _run(_settings(model_ttl=60))
+    timer = tx._unload_timer
+    assert timer is not None and timer.interval == 60 and timer.daemon
+    timer.function()  # what the timer does when it fires
+    assert tx._model is None
+    _run(_settings(model_ttl=60))  # the next run loads it again
+    assert FakeModel.built == [("base", "cpu", "int8")] * 2
+
+
+def test_a_load_and_an_unload_each_trim_the_heap(monkeypatch):
+    trims = []
+    monkeypatch.setattr(tx, "_trim_heap", lambda: trims.append(tx._model is not None))
+    tx.get_model(_settings())
+    tx.get_model(_settings())  # reuse: no load, no trim
+    tx.unload_model()
+    assert trims == [True, False]
+
+
+def test_each_run_restarts_the_countdown():
+    _run(_settings())
+    first = tx._unload_timer
+    _run(_settings())
+    assert tx._unload_timer is not first
+    assert first.finished.is_set()  # cancelled
+
+
+def test_unload_skips_a_run_in_progress():
+    with tx.transcribe_iter(Path("a.flac"), None, 0.0, _settings()) as run:
+        tx.unload_model()
+        assert tx._model is not None
+        list(run)
+
+
+def test_a_run_that_fails_to_start_still_arms_the_timer(monkeypatch):
+    def broken(path):
+        raise ValueError("not audio")
+
+    monkeypatch.setattr(tx, "_decode", broken)
+    with pytest.raises(TranscriptionError, match="failed to start"):
+        with tx.transcribe_iter(Path("a.flac"), None, 0.0, _settings()):
+            pass  # pragma: no cover
+    assert tx._model is not None  # loaded before the decode failed
+    assert tx._unload_timer is not None
+
+
+def test_ttl_zero_keeps_the_model_loaded():
+    _run(_settings(model_ttl=0))
+    assert tx._unload_timer is None
+    assert tx._model is not None
 
 
 def test_cuda_load_failure_falls_back_to_cpu_and_stays_there(capsys):

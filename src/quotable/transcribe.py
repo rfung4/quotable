@@ -7,6 +7,7 @@ they are decoded, and leave it to release the lock — leaving early is how canc
 
 from __future__ import annotations
 
+import ctypes
 import sys
 import threading
 from collections.abc import Iterator
@@ -31,6 +32,7 @@ INFERENCE_LOCK = threading.Lock()
 _MODEL_LOCK = threading.Lock()
 _model: tuple[tuple[str, str, str], Any] | None = None
 _cuda_broken = False
+_unload_timer: threading.Timer | None = None
 
 
 def _whisper_model_cls():
@@ -46,6 +48,17 @@ def _is_cuda_failure(exc: BaseException) -> bool:
 
 def _warn(msg: str) -> None:
     print(f"quotable: {msg}", file=sys.stderr)
+
+
+def _trim_heap() -> None:
+    """Return freed heap pages to the OS (glibc only; elsewhere a no-op).
+
+    Without it a reloaded turbo model keeps its ~1.4 GB of freed read buffers resident.
+    """
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):
+        pass
 
 
 def _cpu_compute_type(settings: Settings) -> str:
@@ -80,6 +93,7 @@ def get_model(settings: Settings, *, force_cpu: bool = False):
             key = (settings.model, device, compute_type)
             model = cls(settings.model, device=device, compute_type=compute_type)
         _model = (key, model)
+        _trim_heap()
         return model
 
 
@@ -88,6 +102,34 @@ def _mark_cuda_broken() -> None:
     _cuda_broken = True
     with _MODEL_LOCK:
         _model = None
+
+
+def unload_model() -> None:
+    """Drop the warm model, freeing its VRAM; a no-op while a run is using it.
+
+    Host RAM mostly stays: CUDA's own state lives until the process exits.
+    """
+    global _model
+    if not INFERENCE_LOCK.acquire(blocking=False):
+        return  # that run re-arms the timer when it ends
+    try:
+        with _MODEL_LOCK:
+            _model = None
+        _trim_heap()
+    finally:
+        INFERENCE_LOCK.release()
+
+
+def _arm_unload(ttl: float) -> None:
+    """Restart the idle countdown (QUOTABLE_MODEL_TTL); call it holding INFERENCE_LOCK."""
+    global _unload_timer
+    if _unload_timer is not None:
+        _unload_timer.cancel()
+        _unload_timer = None
+    if ttl > 0:
+        _unload_timer = threading.Timer(ttl, unload_model)
+        _unload_timer.daemon = True  # never keeps a CLI run alive
+        _unload_timer.start()
 
 
 def speech_chunks(audio: Any) -> list[tuple[float, float]]:
@@ -240,6 +282,7 @@ class WhisperRun:
                     raise TranscriptionError(f"Whisper failed to start: {exc}") from exc
                 self._fall_back(exc)
         except BaseException:
+            _arm_unload(self.settings.model_ttl)
             INFERENCE_LOCK.release()
             raise
         return self
@@ -272,6 +315,7 @@ class WhisperRun:
         if close is not None:
             close()
         self._segments = None
+        _arm_unload(self.settings.model_ttl)
         INFERENCE_LOCK.release()
 
 

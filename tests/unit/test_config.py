@@ -75,6 +75,18 @@ def test_invalid_vad_mode_rejected():
         Settings.from_env({"QUOTABLE_VAD": "maybe", "QUOTABLE_DEVICE": "cpu"})
 
 
+def test_model_ttl_defaults_to_five_minutes_and_reads_seconds():
+    assert Settings.from_env({"QUOTABLE_DEVICE": "cpu"}).model_ttl == 300.0
+    assert Settings.from_env({"QUOTABLE_DEVICE": "cpu", "QUOTABLE_MODEL_TTL": "90"}).model_ttl == 90
+    assert Settings.from_env({"QUOTABLE_DEVICE": "cpu", "QUOTABLE_MODEL_TTL": "0"}).model_ttl == 0
+
+
+@pytest.mark.parametrize("raw", ["soon", "-1", "nan", "inf"])
+def test_invalid_model_ttl_rejected(raw):
+    with pytest.raises(ValueError, match=f"QUOTABLE_MODEL_TTL='{raw}'"):
+        Settings.from_env({"QUOTABLE_DEVICE": "cpu", "QUOTABLE_MODEL_TTL": raw})
+
+
 def test_errors_carry_fix_hint_and_override():
     err = NoCaptionsError("no captions")
     assert isinstance(err, QuotableError) and err.fix
