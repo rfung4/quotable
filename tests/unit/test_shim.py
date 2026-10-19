@@ -92,6 +92,18 @@ def test_key_changes_with_version_and_prefix(code, monkeypatch):
     assert len({before, after_version, shim.socket_key({})}) == 3
 
 
+def test_key_version_is_the_installed_one_without_importlib_metadata():
+    from importlib.metadata import version
+
+    assert shim._version() == version("quotable-mcp")
+    probe = (
+        "import sys; from quotable import shim; shim.socket_key(); "
+        "print('importlib.metadata' in sys.modules)"
+    )
+    out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "False"
+
+
 def test_key_on_the_real_install():
     key = shim.socket_key({})
     assert len(key) == 16 and key == shim.socket_key({})

@@ -49,9 +49,17 @@ class ShimError(Exception):
 
 
 def _version() -> str:
-    from importlib.metadata import version
-
-    return version(DIST)
+    """From the dist-info directory's name: importlib.metadata would cost the shim ~6 MB."""
+    prefix, suffix = DIST.replace("-", "_") + "-", ".dist-info"
+    for entry in sys.path:
+        try:
+            names = os.listdir(entry or ".")
+        except OSError:
+            continue
+        for name in names:
+            if name.startswith(prefix) and name.endswith(suffix):
+                return name[len(prefix) : -len(suffix)]
+    return "unknown"
 
 
 def _site_packages() -> str:
