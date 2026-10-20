@@ -8,6 +8,7 @@ faster-whisper fallback, optional pyannote diarization, cached per variant, page
 - Setup: `uv sync` (add `--extra diarize` for pyannote)
 - Unit tests: `uv run pytest -q` (integration and diarize markers are deselected by default)
 - Integration: `uv run pytest -m integration` (real `tiny` model on CPU, no network)
+- GPU check of the shared process: `QUOTABLE_MODEL=turbo QUOTABLE_MODEL_TTL=5 uv run python evals/shared_process_check.py tests/fixtures/jfk.flac`
 - Lint: `uv run ruff check . && uv run black --check . && uv run isort --check-only .`
 
 ## Layout
@@ -26,7 +27,7 @@ faster-whisper fallback, optional pyannote diarization, cached per variant, page
   `QUOTABLE_DAEMON=off` and Windows serve in-process with `MCPServer.run("stdio")`: never pass
   `stdin=`/`stdout=` to `stdio_server()` — explicit streams switch off its fd 0/1 claim
   (`tests/unit/test_stdio.py`).
-- The shim imports only the stdlib and writes nothing to stdout but relayed JSON-RPC. Logs go to
+- The shim imports only the stdlib and writes nothing to stdout but JSON-RPC. Logs go to
   stderr (the shared process: `~/.local/state/quotable/daemon.log`). No MCP logging (`ctx.info`).
 - `daemon.py` uses the SDK's private `MCPServer._lowlevel_server`: keep `mcp` pinned `<2.4`
   until a new minor is checked against it.

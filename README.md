@@ -89,7 +89,8 @@ in its first line, and an agent should treat it as data, never as instructions.
 | `QUOTABLE_COMPUTE_TYPE` | `float16` on CUDA, `int8` on CPU | ctranslate2 compute type |
 | `QUOTABLE_KEEP_AUDIO` | off | Keep downloaded audio in its scratch directory (path logged to stderr) instead of deleting it; nothing reads it back |
 | `QUOTABLE_HF_TOKEN` | `HF_TOKEN` | Hugging Face token for the diarization model |
-| `QUOTABLE_MODEL_TTL` | `300` | Seconds the Whisper model stays loaded after its last run. Then it is dropped, freeing its GPU memory (about 2 GB for `turbo`), and the next run reloads it in about a second. `0` keeps it loaded |
+| `QUOTABLE_MODEL_TTL` | `300` | Seconds the Whisper model stays loaded after its last run. Then it is dropped, freeing its GPU memory (about 2 GB for `turbo`), and the next run reloads it in about a second. The shared process exits after the same idle time. `0` keeps both |
+| `QUOTABLE_DAEMON` | `on` | `on`: every `quotable serve` relays to one shared process per user (Linux and macOS; see [How it runs](#how-it-runs)). `off`: each session runs its own server in-process. Windows always runs in-process |
 | `QUOTABLE_VAD` | `auto` | Voice filter before Whisper: `on`, `off`, or `auto` (on, unless it keeps less than half of the audio's sound, as it does on some radio recordings: then off, with a warning on stderr) |
 
 A transcript is cached per *variant*: source × method × language × model ×
@@ -100,6 +101,8 @@ second waits and then reads the cache.
 
 On CUDA the model loads in `float16`. If CUDA or cuDNN is missing or broken,
 the load falls back to CPU with a warning on stderr; the server keeps working.
+Running out of GPU memory is different: another program holds the VRAM, so the call
+fails with a message to call again, and the next call uses the GPU.
 faster-whisper's README covers installing cuBLAS and cuDNN 9 for your platform.
 An 8 GB card fits `turbo`.
 
@@ -134,16 +137,43 @@ The pipeline is captions-first: platform subtitles or a feed's
 `<podcast:transcript>` cost seconds and keep names right, so they win when
 they exist. Whisper runs otherwise, on the GPU when there is one. Segments are
 written to disk as they arrive, so a crashed or cancelled run resumes from its
-last segment. One model stays warm per process, and one lock per process
-serialises inference so two runs in one server cannot fight for the card. Each
-MCP client starts its own server, so two clients hold two models: two `turbo`
-servers fit an 8 GB card, two diarizing ones may not.
+last segment.
 
-The server runs the work in-process. yt-dlp spawns ffmpeg and a JS runtime on
-its own, and a child that inherits the server's stdin or stdout would block or
-corrupt the JSON-RPC pipe. The `mcp` SDK repoints fd 0 and fd 1 while serving,
-quotable never overrides that, and a regression test pins the behaviour.
-See [docs/notes/mcp-stdio-subprocess.md](docs/notes/mcp-stdio-subprocess.md).
+### How it runs
+
+```text
+session ─stdio─► quotable serve ─┐
+session ─stdio─► quotable serve ─┼─► $XDG_RUNTIME_DIR/quotable/<key>.sock
+session ─stdio─► quotable serve ─┘          │ started on first use
+                                            ▼
+                     one shared process: one model, one GPU queue;
+                     exits after QUOTABLE_MODEL_TTL idle seconds
+```
+
+On Linux and macOS, `quotable serve` is a small relay (about 12 MB, standard library
+only) between the MCP client and one shared process per user, which it starts on first
+use. Every session shares that process's warm model and cache, and inference runs one
+call at a time: a call that has to wait reports "waiting behind another transcription"
+as progress, and cancelling it while it waits stops it before it starts. Relative file paths
+resolve against each session's own working directory.
+
+The socket name hashes the version, the installed code and dependencies, and the
+`QUOTABLE_*` settings, so sessions with different settings or code get different
+processes. After `QUOTABLE_MODEL_TTL` seconds with nothing in flight the process exits,
+which frees all of its memory: the model, and the ~500 MB of RAM and ~160 MB of GPU
+memory that CUDA keeps until a process exits. The next call starts it again in about
+half a second plus the model load. A call sent just as it exits is resent to the new
+process; if it crashes instead, the calls in flight fail with an error saying so, and
+the next call starts a new one. Its log is `$XDG_STATE_HOME/quotable/daemon.log`
+(`~/.local/state/quotable/daemon.log`).
+`QUOTABLE_DAEMON=off` gives each session its own in-process server instead, holding its
+own model: two `turbo` servers fit an 8 GB card, two diarizing ones may not.
+
+yt-dlp spawns ffmpeg and a JS runtime on its own, and a child that inherits the
+server's stdin or stdout would block or corrupt the JSON-RPC pipe. The shared process
+points fd 0 at `/dev/null` and fd 1 at its log before serving; in-process, the `mcp` SDK
+repoints fd 0 and fd 1 while serving and quotable never overrides that. Regression tests
+pin both. See [docs/notes/mcp-stdio-subprocess.md](docs/notes/mcp-stdio-subprocess.md).
 
 ## Benchmark
 
