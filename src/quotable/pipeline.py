@@ -43,6 +43,7 @@ Mode = Literal["auto", "captions", "whisper"]
 MODES = ("auto", "captions", "whisper")
 RECENT_EPISODES = 20
 OnSegment = Callable[[Segment, float, "float | None"], None]
+OnWait = Callable[[], None]
 _SOURCE_FIX = "Pass an existing file path, a podcast feed URL or a media URL."
 
 
@@ -227,6 +228,7 @@ def _from_audio(
     diarize: bool,
     force: bool,
     on_segment: OnSegment | None,
+    on_wait: OnWait | None,
     cancel: threading.Event | None,
     settings: Settings,
 ) -> Outcome:
@@ -245,7 +247,9 @@ def _from_audio(
         media = _fetch_audio(src, work)
         segments = store.partial_segments(key, variant)
         start_s = segments[-1].end if segments else 0.0
-        with tx.transcribe_iter(media.path, language, start_s, settings) as run:
+        with tx.transcribe_iter(
+            media.path, language, start_s, settings, cancel=cancel, on_wait=on_wait
+        ) as run:
             for seg in run:
                 store.append_partial(key, variant, seg)
                 segments.append(seg)
@@ -256,7 +260,8 @@ def _from_audio(
 
         if diarize:
             _check_cancel(cancel)
-            segments = dz.assign_speakers(segments, dz.diarize(media.path, settings))
+            turns = dz.diarize(media.path, settings, cancel=cancel, on_wait=on_wait)
+            segments = dz.assign_speakers(segments, turns)
         transcript = _transcript(
             src,
             variant,
@@ -280,6 +285,7 @@ def transcribe(
     episode: str | int | None = None,
     force: bool = False,
     on_segment: OnSegment | None = None,
+    on_wait: OnWait | None = None,
     cancel: threading.Event | None = None,
     settings: Settings | None = None,
 ) -> Outcome:
@@ -289,7 +295,8 @@ def transcribe(
     to Whisper; ``captions`` never runs Whisper (``NoCaptionsError`` instead); ``whisper``
     never looks for captions. ``diarize`` always takes the audio path, since captions
     carry no speakers. ``on_segment(segment, done_s, total_s)`` is called per Whisper
-    segment; setting ``cancel`` stops between segments with ``CancelledError``, keeping
+    segment; ``on_wait()`` once when the run queues behind another on the GPU. Setting
+    ``cancel`` stops between segments (or in the queue) with ``CancelledError``, keeping
     the work so far for the next call. ``force`` ignores the cache and any partial run.
     """
     if mode not in MODES:
@@ -321,6 +328,7 @@ def transcribe(
             diarize=diarize,
             force=force,
             on_segment=on_segment,
+            on_wait=on_wait,
             cancel=cancel,
             settings=settings,
         )

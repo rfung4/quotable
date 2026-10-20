@@ -1,3 +1,5 @@
+import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -6,7 +8,7 @@ import pytest
 
 from quotable import transcribe as tx
 from quotable.config import Settings
-from quotable.models import TranscriptionError
+from quotable.models import CancelledError, GpuBusyError, TranscriptionError
 
 SR = tx.SAMPLE_RATE
 
@@ -45,9 +47,12 @@ class FakeModel:
     built: list[tuple] = []
     calls: list[dict] = []
     fail_load_on: set[str] = set()
+    fail_start_on: set[str] = set()
     fail_first_segment_on: set[str] = set()
+    fail_second_segment_on: set[str] = set()
     after_vad = 10.0  # what the VAD keeps on a vad_filter=True call
     load_error = RuntimeError("CUDA failed with error no CUDA-capable device is detected")
+    run_error = RuntimeError("Unable to load any of {libcudnn_ops.so.9.1.0, libcudnn_ops.so}")
 
     def __init__(self, name, device, compute_type):
         if device in self.fail_load_on:
@@ -57,11 +62,16 @@ class FakeModel:
 
     def transcribe(self, audio, **kwargs):
         FakeModel.calls.append({"device": self.device, **kwargs})
+        if self.device in self.fail_start_on:
+            raise self.run_error
 
         def gen():
             if self.device in self.fail_first_segment_on:
-                raise RuntimeError("Unable to load any of {libcudnn_ops.so.9.1.0, libcudnn_ops.so}")
-            yield from SEGMENTS
+                raise self.run_error
+            yield SEGMENTS[0]
+            if self.device in self.fail_second_segment_on:
+                raise self.run_error
+            yield from SEGMENTS[1:]
 
         kept = FakeModel.after_vad if kwargs.get("vad_filter") else 10.0
         return gen(), FWInfo(duration_after_vad=kept)
@@ -71,17 +81,27 @@ class FakeModel:
 def fake_whisper(monkeypatch):
     FakeModel.built, FakeModel.calls = [], []
     FakeModel.fail_load_on, FakeModel.fail_first_segment_on = set(), set()
+    FakeModel.fail_start_on, FakeModel.fail_second_segment_on = set(), set()
     FakeModel.after_vad = 10.0
     monkeypatch.setattr(tx, "_whisper_model_cls", lambda: FakeModel)
     monkeypatch.setattr(tx, "_decode", lambda path: np.zeros(SR * 10, dtype=np.float32))
     monkeypatch.setattr(tx, "_model", None)
     monkeypatch.setattr(tx, "_cuda_broken", False)
+    monkeypatch.setattr(tx, "_unload_timer", None)
+    yield
+    if tx._unload_timer is not None:
+        tx._unload_timer.cancel()
 
 
-def _settings(device="cpu", model="base", compute_type=None, vad="auto") -> Settings:
+def _settings(device="cpu", model="base", compute_type=None, vad="auto", model_ttl=300.0):
     compute_type = compute_type or ("float16" if device == "cuda" else "int8")
     return Settings(
-        output_dir=Path("/tmp/q"), model=model, device=device, compute_type=compute_type, vad=vad
+        output_dir=Path("/tmp/q"),
+        model=model,
+        device=device,
+        compute_type=compute_type,
+        vad=vad,
+        model_ttl=model_ttl,
     )
 
 
@@ -106,6 +126,67 @@ def test_a_different_model_replaces_the_singleton():
     tx.get_model(_settings(model="tiny"))
     assert [b[0] for b in FakeModel.built] == ["base", "tiny"]
     assert tx._model[0] == ("tiny", "cpu", "int8")
+
+
+# --- idle unload (QUOTABLE_MODEL_TTL) -------------------------------------------------
+
+
+def test_a_run_arms_the_idle_timer_and_firing_it_drops_the_model():
+    _run(_settings(model_ttl=60))
+    timer = tx._unload_timer
+    assert timer is not None and timer.interval == 60 and timer.daemon
+    timer.function()  # what the timer does when it fires
+    assert tx._model is None
+    _run(_settings(model_ttl=60))  # the next run loads it again
+    assert FakeModel.built == [("base", "cpu", "int8")] * 2
+
+
+def test_a_load_and_an_unload_each_trim_the_heap(monkeypatch):
+    trims = []
+    monkeypatch.setattr(tx, "_trim_heap", lambda: trims.append(tx._model is not None))
+    tx.get_model(_settings())
+    tx.get_model(_settings())  # reuse: no load, no trim
+    tx.unload_model()
+    assert trims == [True, False]
+
+
+def test_each_run_restarts_the_countdown():
+    _run(_settings())
+    first = tx._unload_timer
+    _run(_settings())
+    assert tx._unload_timer is not first
+    assert first.finished.is_set()  # cancelled
+
+
+def test_unload_skips_a_run_in_progress():
+    with tx.transcribe_iter(Path("a.flac"), None, 0.0, _settings()) as run:
+        tx.unload_model()
+        assert tx._model is not None
+        list(run)
+
+
+def test_a_run_that_fails_to_start_still_arms_the_timer(monkeypatch):
+    def broken(path):
+        raise ValueError("not audio")
+
+    monkeypatch.setattr(tx, "_decode", broken)
+    with pytest.raises(TranscriptionError, match="failed to start"):
+        with tx.transcribe_iter(Path("a.flac"), None, 0.0, _settings()):
+            pass  # pragma: no cover
+    assert tx._model is not None  # loaded before the decode failed
+    assert tx._unload_timer is not None
+
+
+def test_a_model_load_is_logged_once(capsys):
+    _run(_settings())
+    _run(_settings())
+    assert capsys.readouterr().err.count("quotable: loaded Whisper base on cpu (int8)") == 1
+
+
+def test_ttl_zero_keeps_the_model_loaded():
+    _run(_settings(model_ttl=0))
+    assert tx._unload_timer is None
+    assert tx._model is not None
 
 
 def test_cuda_load_failure_falls_back_to_cpu_and_stays_there(capsys):
@@ -241,7 +322,7 @@ def test_guard_keeps_vad_when_it_keeps_the_sound(loud_minute, capsys):
     FakeModel.after_vad = 58.0
     run, _ = _run(_settings())
     assert [c["vad_filter"] for c in FakeModel.calls] == [True]
-    assert run.vad is True and capsys.readouterr().err == ""
+    assert run.vad is True and "voice filter" not in capsys.readouterr().err
 
 
 def test_guard_leaves_silence_to_the_vad():
@@ -256,7 +337,7 @@ def test_quotable_vad_on_and_off_skip_the_guard(loud_minute, capsys, mode, expec
     FakeModel.after_vad = 15.0
     run, _ = _run(_settings(vad=mode))
     assert [c["vad_filter"] for c in FakeModel.calls] == expected
-    assert run.vad is (mode == "on") and capsys.readouterr().err == ""
+    assert run.vad is (mode == "on") and "voice filter" not in capsys.readouterr().err
 
 
 def test_resume_without_vad_decodes_from_the_resume_point(loud_minute, monkeypatch):
@@ -307,3 +388,170 @@ def test_whisper_language_takes_the_caption_spellings(code, want):
 def test_unknown_whisper_language_is_a_value_error():
     with pytest.raises(ValueError, match="'xx'"):
         tx.whisper_language("xx")
+
+
+# --- the GPU queue ------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fast_queue(monkeypatch):
+    monkeypatch.setattr(tx, "QUEUE_POLL_S", 0.02)
+
+
+def _in_thread(fn):
+    box = {}
+
+    def target():
+        try:
+            box["value"] = fn()
+        except BaseException as exc:  # handed to the test thread
+            box["error"] = exc
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    return thread, box
+
+
+def test_queue_takes_a_free_lock_without_reporting():
+    waits = []
+    tx.acquire_inference(threading.Event(), lambda: waits.append(1))
+    try:
+        assert tx.INFERENCE_LOCK.locked() and waits == []
+    finally:
+        tx.INFERENCE_LOCK.release()
+
+
+def test_queue_waits_behind_a_run_and_reports_it_once(fast_queue):
+    waits = []
+    tx.INFERENCE_LOCK.acquire()
+    thread, box = _in_thread(
+        lambda: tx.acquire_inference(threading.Event(), lambda: waits.append(1))
+    )
+    time.sleep(0.2)
+    assert waits == [1] and thread.is_alive()
+    tx.INFERENCE_LOCK.release()
+    thread.join(2)
+    assert not thread.is_alive() and "error" not in box
+    assert tx.INFERENCE_LOCK.locked()  # now the waiter's
+    tx.INFERENCE_LOCK.release()
+
+
+def test_queue_cancel_while_waiting_gives_up_promptly(fast_queue):
+    cancel = threading.Event()
+    tx.INFERENCE_LOCK.acquire()
+    try:
+        thread, box = _in_thread(lambda: tx.acquire_inference(cancel))
+        time.sleep(0.1)
+        start = time.monotonic()
+        cancel.set()
+        thread.join(2)
+        assert time.monotonic() - start < 0.5
+        assert isinstance(box.get("error"), CancelledError)
+        assert "waiting behind another transcription" in box["error"].message
+    finally:
+        tx.INFERENCE_LOCK.release()
+    assert not tx.INFERENCE_LOCK.locked()  # the cancelled waiter took nothing
+
+
+def test_queue_cancelled_run_never_loads_or_holds_the_lock(fast_queue):
+    cancel = threading.Event()
+    waits = []
+    tx.INFERENCE_LOCK.acquire()
+    try:
+
+        def run():
+            with tx.transcribe_iter(
+                Path("a.flac"), settings=_settings(), cancel=cancel, on_wait=lambda: waits.append(1)
+            ):
+                pass
+
+        thread, box = _in_thread(run)
+        time.sleep(0.1)
+        cancel.set()
+        thread.join(2)
+        assert isinstance(box.get("error"), CancelledError) and waits == [1]
+        assert FakeModel.built == []
+    finally:
+        tx.INFERENCE_LOCK.release()
+    assert not tx.INFERENCE_LOCK.locked()
+
+
+def test_queue_run_after_waiting_transcribes(fast_queue):
+    tx.INFERENCE_LOCK.acquire()
+
+    def run():
+        with tx.transcribe_iter(
+            Path("a.flac"), settings=_settings(), cancel=threading.Event()
+        ) as r:
+            return list(r)
+
+    thread, box = _in_thread(run)
+    time.sleep(0.1)
+    tx.INFERENCE_LOCK.release()
+    thread.join(5)
+    assert len(box["value"]) == len(SEGMENTS)
+    assert not tx.INFERENCE_LOCK.locked()
+
+
+# --- out of memory is not a broken GPU -------------------------------------------------
+
+OOM_TEXTS = [
+    "CUDA failed with error out of memory",
+    "cuBLAS failed with status CUBLAS_STATUS_ALLOC_FAILED",
+]
+
+
+@pytest.fixture(params=OOM_TEXTS)
+def oom(request, monkeypatch):
+    error = RuntimeError(request.param)
+    monkeypatch.setattr(FakeModel, "load_error", error)
+    monkeypatch.setattr(FakeModel, "run_error", error)
+    return error
+
+
+def _assert_gpu_busy(err):
+    assert isinstance(err.value, GpuBusyError)
+    assert not tx._cuda_broken
+    assert tx._model is None  # VRAM handed back, though the run held INFERENCE_LOCK
+    assert "QUOTABLE_DEVICE=cpu" in err.value.fix
+    assert not tx.INFERENCE_LOCK.locked()
+
+
+@pytest.mark.parametrize("site", ["load", "start", "first_segment"])
+def test_out_of_memory_raises_gpu_busy_and_keeps_the_gpu(oom, site, capsys):
+    getattr(FakeModel, f"fail_{site}_on").add("cuda")
+    s = _settings(device="cuda", model="turbo")
+    with pytest.raises(GpuBusyError) as err:
+        _run(s)
+    _assert_gpu_busy(err)
+    assert all(device == "cuda" for _, device, _ in FakeModel.built)  # no CPU fallback
+    assert "falling back" not in capsys.readouterr().err
+
+    getattr(FakeModel, f"fail_{site}_on").clear()
+    _, segs = _run(s)  # the GPU is free again: the next run uses it
+    assert segs and FakeModel.built[-1] == ("turbo", "cuda", "float16")
+
+
+def test_out_of_memory_mid_run_keeps_the_segments_so_far(oom):
+    FakeModel.fail_second_segment_on = {"cuda"}
+    got = []
+    with pytest.raises(GpuBusyError) as err:
+        with tx.transcribe_iter(Path("a.flac"), settings=_settings(device="cuda")) as run:
+            for seg in run:
+                got.append(seg)
+    _assert_gpu_busy(err)
+    assert [s.text for s in got] == ["ask not"]
+
+
+def test_out_of_memory_on_cpu_is_not_gpu_busy(monkeypatch):
+    monkeypatch.setattr(FakeModel, "run_error", RuntimeError("std::bad_alloc: out of memory"))
+    FakeModel.fail_start_on = {"cpu"}
+    with pytest.raises(TranscriptionError):
+        _run(_settings(device="cpu"))
+
+
+def test_out_of_memory_is_told_apart_from_a_broken_cuda(capsys):
+    FakeModel.fail_first_segment_on = {"cuda"}  # the default run_error: a missing cuDNN
+    _run(_settings(device="cuda"))
+    assert tx._cuda_broken
+    assert "retrying on CPU" in capsys.readouterr().err

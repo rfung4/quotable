@@ -38,6 +38,24 @@ So the one rule for this repo is:
 The original design had quotable own an `stdio.py` that passed its own streams.
 That would have switched the SDK's claim off and left the children on the pipe.
 
+## The shared process
+
+Since bazar, `quotable serve` on Linux and macOS does not run the SDK server at
+all: it is a stdlib-only shim (`shim.py`) relaying stdio to one shared process
+(`daemon.py`), and the `_claim_fd` rule above applies only to the in-process mode
+(`QUOTABLE_DAEMON=off`, Windows). The wire is still kept from every child:
+
+- the shim writes nothing to stdout but JSON-RPC, and spawns the shared process
+  with stdin and stdout on `/dev/null`, stderr on `daemon.log`, in a new session;
+- the shared process (`daemon.detach`) points fd 0 at `/dev/null` and fd 1 and 2
+  at `~/.local/state/quotable/daemon.log` before serving, and `chdir`s to `/`, so a
+  relative path that missed the session's cwd fails loudly;
+- its JSON-RPC runs over a Unix socket per session, never over fd 0/1, so a child
+  of yt-dlp can read EOF or print to the log, nothing else.
+
+`tests/unit/test_daemon.py` checks the fds; `tests/integration/test_shared_process.py`
+checks that children see `/dev/null` on fd 0 and fd 1.
+
 ## The regression test
 
 `tests/unit/test_stdio.py` pins the behaviour against an SDK upgrade. It
@@ -72,4 +90,13 @@ multi-second saving per job.
 `SHELL`, `TERM`, `USER`, `LOGNAME`. Other clients behave the same way. Any
 `QUOTABLE_*` setting has to be passed in the client's `env` block, or the server
 silently uses its defaults. The integration test forwards `os.environ` for this
-reason.
+reason. With the shared process the env block also picks the process: the
+socket key hashes the `QUOTABLE_*` settings, so two clients with different env
+blocks get two processes.
+
+Clients also differ in how they open. Claude Code (2.1.304) speaks protocol
+2026-07-28: `server/discover` instead of `initialize`, then a
+`subscriptions/listen` request held open, unanswered, for the whole session.
+The Python SDK client does neither, so a test written against it alone will not
+see what a real session sends; capture one (a `tee` wrapper as the server
+command, `claude -p --strict-mcp-config --mcp-config …`) before relying on it.

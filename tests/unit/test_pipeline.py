@@ -115,10 +115,11 @@ class FakeWhisper:
         self.yielded = 0
         self.gate: threading.Event | None = None  # when set, runs wait on it before decoding
 
-    def __call__(self, audio, language=None, start_s=0.0, settings=None):
+    def __call__(self, audio, language=None, start_s=0.0, settings=None, cancel=None, on_wait=None):
         self.calls.append(
             {"audio": Path(audio), "exists": Path(audio).is_file(), "start_s": start_s}
         )
+        self.queue = {"cancel": cancel, "on_wait": on_wait}
         return FakeRun(self, start_s)
 
 
@@ -204,8 +205,9 @@ def diarizer(monkeypatch):
     def get_pipeline(token):
         calls["pipeline"] += 1
 
-    def diarize(audio, settings):
+    def diarize(audio, settings, cancel=None, on_wait=None):
         calls["diarize"] += 1
+        calls["queue"] = {"cancel": cancel, "on_wait": on_wait}
         return [Turn(0.0, 3.0, "SPEAKER_00"), Turn(3.0, 6.0, "SPEAKER_01")]
 
     monkeypatch.setattr(dz, "get_pipeline", get_pipeline)
@@ -415,7 +417,7 @@ def test_diarize_skips_captions_and_labels_speakers(settings, youtube, whisper, 
     assert [s.speaker for s in t.segments] == ["SPEAKER_00", "SPEAKER_00", "SPEAKER_01"]
     assert all(w.speaker for s in t.segments for w in s.words)
     assert t.speakers == ["SPEAKER_00", "SPEAKER_01"]
-    assert diarizer == {"pipeline": 1, "diarize": 1}
+    assert diarizer["pipeline"] == 1 and diarizer["diarize"] == 1
 
 
 def test_missing_diarize_extra_fails_before_download_or_whisper(
@@ -600,3 +602,21 @@ def test_media_info_lists_each_recent_episodes_declared_transcript_types(net):
 def test_media_info_refuses_episode_on_a_file():
     with pytest.raises(SourceError, match="only to podcast RSS feeds"):
         pipeline.media_info(str(FIXTURES / "jfk.flac"), episode=1)
+
+
+# --- the GPU queue ------------------------------------------------------------------------
+
+
+def test_queue_cancel_and_wait_report_reach_whisper_and_diarize(
+    settings, recording, whisper, diarizer
+):
+    cancel = threading.Event()
+
+    def on_wait():
+        pass
+
+    pipeline.transcribe(
+        str(recording), diarize=True, cancel=cancel, on_wait=on_wait, settings=settings
+    )
+    assert whisper.queue == {"cancel": cancel, "on_wait": on_wait}
+    assert diarizer["queue"] == {"cancel": cancel, "on_wait": on_wait}

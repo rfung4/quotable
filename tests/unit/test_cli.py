@@ -1,9 +1,11 @@
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
-from quotable import cli, pipeline, server
+from quotable import cli, daemon, pipeline, server, shim
 from quotable.models import (
     MediaInfo,
     Method,
@@ -120,11 +122,76 @@ def test_value_error_exits_1(monkeypatch, capsys):
     assert "diarize=True needs the audio" in capsys.readouterr().err
 
 
-def test_serve_runs_the_server(monkeypatch):
+@pytest.fixture
+def serve_targets(monkeypatch):
     ran = []
-    monkeypatch.setattr(server, "run", lambda: ran.append(True))
+    monkeypatch.setattr(server, "run", lambda: ran.append("in-process"))
+    monkeypatch.setattr(shim, "main", lambda: ran.append("shim") or 0)
+    return ran
+
+
+@pytest.mark.parametrize("value, target", [(None, "shim"), ("on", "shim"), (" ON ", "shim")])
+def test_serve_uses_the_shim_on_posix(monkeypatch, serve_targets, value, target):
+    if value is None:
+        monkeypatch.delenv("QUOTABLE_DAEMON", raising=False)
+    else:
+        monkeypatch.setenv("QUOTABLE_DAEMON", value)
     assert cli.main(["serve"]) == 0
+    assert serve_targets == [target]
+
+
+def test_serve_runs_the_server_in_process_when_off(monkeypatch, serve_targets):
+    monkeypatch.setenv("QUOTABLE_DAEMON", "off")
+    assert cli.main(["serve"]) == 0
+    assert serve_targets == ["in-process"]
+
+
+def test_serve_runs_in_process_on_windows(monkeypatch, serve_targets):
+    monkeypatch.setenv("QUOTABLE_DAEMON", "on")
+    monkeypatch.setattr(cli, "_shim_supported", lambda: False)
+    assert cli.main(["serve"]) == 0
+    assert serve_targets == ["in-process"]
+
+
+def test_serve_rejects_an_unknown_daemon_mode(monkeypatch, serve_targets, capsys):
+    monkeypatch.setenv("QUOTABLE_DAEMON", "maybe")
+    assert cli.main(["serve"]) == 2
+    assert serve_targets == []
+    assert "QUOTABLE_DAEMON='maybe' is invalid; use on or off" in capsys.readouterr().err
+
+
+def test_serve_help_still_works(capsys):
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["serve", "--help"])
+    assert exc.value.code == 0 and "usage: quotable serve" in capsys.readouterr().out
+
+
+def test_daemon_command_runs_the_shared_process(monkeypatch):
+    ran = []
+    monkeypatch.setattr(daemon, "run", lambda: ran.append(True))
+    assert cli.main(["daemon"]) == 0
     assert ran == [True]
+
+
+def test_serve_through_the_shim_imports_only_the_stdlib(tmp_path):
+    # stdin at EOF: the shim exits before connecting, so nothing is spawned.
+    probe = (
+        "import sys; before = set(sys.modules); from quotable import cli; "
+        "code = cli.main(['serve']); "
+        "new = {m.split('.')[0] for m in set(sys.modules) - before}; "
+        "print(code, sorted(new - set(sys.stdlib_module_names) - {'quotable'}), "
+        "'importlib.metadata' in sys.modules)"
+    )
+    env = {"PATH": "/usr/bin:/bin", "QUOTABLE_DAEMON": "on", "XDG_STATE_HOME": str(tmp_path)}
+    out = subprocess.run(
+        [sys.executable, "-c", probe],
+        env=env,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert out.strip() == "0 [] False"
 
 
 def test_unknown_format_is_rejected(capsys):
