@@ -77,11 +77,41 @@ def test_key_ignores_non_python_files(code):
     assert shim.socket_key({}) == before
 
 
-def test_key_changes_when_dependencies_change(code):
+def test_key_changes_when_a_dependency_is_reinstalled(code):
     _, site = code
+    (site / "anyio-4.0.dist-info").mkdir()
     before = shim.socket_key({})
-    _bump(site)
+    _bump(site / "anyio-4.0.dist-info")
     assert shim.socket_key({}) != before
+
+
+@pytest.mark.parametrize("change", ["add", "upgrade", "remove"])
+def test_key_changes_when_dependencies_are_added_upgraded_or_removed(code, change):
+    _, site = code
+    (site / "anyio-4.0.dist-info").mkdir()
+    (site / "attrs-1.0.dist-info").mkdir()
+    before = shim.socket_key({})
+    if change == "add":
+        (site / "yt_dlp-1.0.dist-info").mkdir()
+    elif change == "upgrade":
+        (site / "anyio-4.0.dist-info").rename(site / "anyio-4.1.dist-info")
+    else:
+        (site / "attrs-1.0.dist-info").rmdir()
+    assert shim.socket_key({}) != before
+
+
+def test_key_survives_the_first_run_writing_pycache_into_site_packages(code):
+    """Dogfood bug: the first import after an install creates site-packages/__pycache__,
+    which moved the directory's mtime and so the key; the next session spawned a second
+    shared process."""
+    _, site = code
+    (site / "anyio-4.0.dist-info").mkdir()
+    (site / "typing_extensions.py").write_text("")
+    before = shim.socket_key({})
+    (site / "__pycache__").mkdir()
+    (site / "__pycache__" / "typing_extensions.cpython-313.pyc").write_bytes(b"")
+    _bump(site)
+    assert shim.socket_key({}) == before
 
 
 def test_key_changes_with_version_and_prefix(code, monkeypatch):

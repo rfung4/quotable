@@ -70,6 +70,19 @@ def _newest_source_mtime() -> int:
     return max((p.stat().st_mtime_ns for p in PACKAGE_DIR.glob("*.py")), default=0)
 
 
+def _installed_dists(site: str) -> list[str]:
+    """Each installed distribution with its mtime: installs, upgrades and removals change this.
+
+    Not site-packages' own mtime: the first import after an install writes
+    site-packages/__pycache__, which moved it and so the key.
+    """
+    try:
+        entries = [e for e in os.scandir(site) if e.name.endswith(".dist-info")]
+    except OSError:
+        return []
+    return sorted(f"{e.name}@{e.stat().st_mtime_ns}" for e in entries)
+
+
 def socket_key(env: Mapping[str, str] | None = None) -> str:
     env = os.environ if env is None else env
     settings = sorted(
@@ -84,7 +97,7 @@ def socket_key(env: Mapping[str, str] | None = None) -> str:
         str(_newest_source_mtime()),
         sys.prefix,
         site,
-        str(os.stat(site).st_mtime_ns),
+        *_installed_dists(site),
         *(f"{name}={value}" for name, value in settings),
     ]
     return hashlib.sha256("\0".join(parts).encode()).hexdigest()[:16]
