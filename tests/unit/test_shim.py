@@ -652,3 +652,12 @@ def test_spawn_daemon_detaches_and_logs(monkeypatch, tmp_path):
     assert seen["start_new_session"] is True
     assert seen["cwd"] == "/"  # `-m` puts the cwd on sys.path: a quotable/ there would shadow
     assert seen["env"] == env
+
+
+def test_key_skips_files_that_vanish_mid_checkout(code):
+    package, site = code
+    (site / "anyio-4.0.dist-info").mkdir()
+    before = shim.socket_key({})
+    (package / "gone.py").symlink_to(package / "missing.py")  # listed, then fails to stat
+    (site / "gone-1.0.dist-info").symlink_to(site / "missing")
+    assert shim.socket_key({}) == before

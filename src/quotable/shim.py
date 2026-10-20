@@ -66,8 +66,17 @@ def _site_packages() -> str:
     return sysconfig.get_paths()["purelib"]
 
 
+def _mtime_ns(path: str | Path) -> int | None:
+    """``None`` for a file listed but gone by the stat (mid-checkout, a dangling symlink)."""
+    try:
+        return os.stat(path).st_mtime_ns
+    except FileNotFoundError:
+        return None
+
+
 def _newest_source_mtime() -> int:
-    return max((p.stat().st_mtime_ns for p in PACKAGE_DIR.glob("*.py")), default=0)
+    mtimes = (_mtime_ns(p) for p in PACKAGE_DIR.glob("*.py"))
+    return max((m for m in mtimes if m is not None), default=0)
 
 
 def _installed_dists(site: str) -> list[str]:
@@ -80,7 +89,8 @@ def _installed_dists(site: str) -> list[str]:
         entries = [e for e in os.scandir(site) if e.name.endswith(".dist-info")]
     except OSError:
         return []
-    return sorted(f"{e.name}@{e.stat().st_mtime_ns}" for e in entries)
+    stamped = ((e.name, _mtime_ns(e.path)) for e in entries)
+    return sorted(f"{name}@{mtime}" for name, mtime in stamped if mtime is not None)
 
 
 def socket_key(env: Mapping[str, str] | None = None) -> str:

@@ -678,3 +678,69 @@ def test_a_failing_key_check_is_retried_not_fatal(sock):
 
     anyio.run(main)
     assert len(calls) > 2
+
+
+def test_a_key_check_that_keeps_failing_still_lets_it_idle_out(sock):
+    def broken_key():
+        raise FileNotFoundError("dangling symlink")
+
+    d = _daemon(MCPServer("t"), sock, ttl_s=0.2, current_key=broken_key)
+
+    async def main():
+        with anyio.fail_after(3):
+            await d.serve()
+
+    anyio.run(main)
+    assert not sock.exists()
+
+
+def test_a_connection_accepted_after_the_exit_was_decided_gets_a_bye_of_zero(sock):
+    d = _daemon(MCPServer("t"), sock)  # ttl 0: never idles on its own
+
+    async def main():
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(d.serve)
+            await _wait_for(sock)
+            d.exiting = True  # as _watch leaves it; the backlog can still hold connections
+            late = await Client.connect(sock)
+            with anyio.fail_after(3):
+                assert await late.recv() == {daemon.BYE: 0}
+            tg.cancel_scope.cancel()
+
+    anyio.run(main)
+
+
+def test_one_stuck_shim_does_not_delay_the_others_bye(sock, monkeypatch):
+    d = _daemon(MCPServer("t"), sock, ttl_s=0.2)
+    send_line = daemon._Connection.send_line
+    stuck = []
+
+    async def maybe_stuck(self, text):
+        if daemon.BYE in text and not stuck:
+            stuck.append(self)
+            await anyio.sleep(30)  # a shim that stopped reading, its buffer full
+        await send_line(self, text)
+
+    monkeypatch.setattr(daemon._Connection, "send_line", maybe_stuck)
+
+    async def main():
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(d.serve)
+            await _wait_for(sock)
+            a, b = await Client.connect(sock), await Client.connect(sock)
+            got = []
+
+            async def recv(client):
+                got.append(await client.recv())
+
+            async with anyio.create_task_group() as readers:
+                readers.start_soon(recv, a)
+                readers.start_soon(recv, b)
+                with anyio.fail_after(2):  # sequential byes would wait out the stuck one (5 s)
+                    while not got:
+                        await anyio.sleep(0.02)
+                readers.cancel_scope.cancel()
+            assert got[0] == {daemon.BYE: 0}
+            tg.cancel_scope.cancel()
+
+    anyio.run(main)

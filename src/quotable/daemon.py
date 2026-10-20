@@ -6,10 +6,11 @@ lock holder binds or unlinks the socket, so two processes never serve one key.
 Wire, per connection: a hello line ``{"cwd": "/abs/path"}``, then newline-delimited JSON-RPC
 in both directions, served as its own MCP session on one shared server (one model, one GPU
 queue). When nothing is in flight and either ``QUOTABLE_MODEL_TTL`` has passed since the last
-message or the code's socket key has changed, it stops reading every connection, sends
-``{"quotable_bye": <lines read>}`` on each, unlinks the socket and exits. Lines past that
-count were never read, so the shim resends them to the next process without running anything
-twice.
+message or the code's socket key has changed, it unlinks the socket (a shim connecting from
+then on spawns a fresh process), stops reading every connection, sends
+``{"quotable_bye": <lines read>}`` on each at once, and exits; a connection still accepted
+from the backlog gets ``{"quotable_bye": 0}``. Lines past the count were never read, so the
+shim resends them to the next process without running anything twice.
 """
 
 from __future__ import annotations
@@ -115,6 +116,12 @@ class _Connection:
             await self.stream.send(text.encode() + b"\n")
 
 
+async def _send_bye(conn: _Connection, lines_read: int) -> None:
+    with suppress(anyio.BrokenResourceError, anyio.ClosedResourceError, OSError):
+        with anyio.move_on_after(5):
+            await conn.send_line(json.dumps({BYE: lines_read}))
+
+
 class Daemon:
     """Serves ``lowlevel`` (an SDK low-level server) on a Unix socket until idle or outdated."""
 
@@ -169,9 +176,9 @@ class Daemon:
                 continue
             try:
                 current = self.current_key()
-            except OSError as exc:  # a source file replaced mid-checkout: look again next tick
+            except OSError as exc:  # can't tell: keep this key, so idle exit still works
                 _log(f"could not check the key: {exc!r}")
-                continue
+                current = self.key
             if current != self.key:
                 reason = "outdated"
             elif self.ttl_s > 0 and anyio.current_time() - self.last_activity >= self.ttl_s:
@@ -188,17 +195,15 @@ class Daemon:
 
     async def _bye(self, reason: str) -> None:
         _log(f"exiting ({reason}); {len(self.connections)} connection(s) told to resend")
-        for conn in list(self.connections):
-            with suppress(anyio.BrokenResourceError, anyio.ClosedResourceError, OSError):
-                with anyio.move_on_after(5):
-                    await conn.send_line(json.dumps({BYE: conn.lines_read}))
+        async with anyio.create_task_group() as tg:  # at once: one stuck shim delays no other
+            for conn in list(self.connections):
+                tg.start_soon(_send_bye, conn, conn.lines_read)
 
     async def _handle(self, stream: SocketStream) -> None:
         conn = _Connection(stream)
         if self.exiting:  # accepted after the exit was decided: nothing read, nothing to resend
             async with stream:
-                with suppress(anyio.BrokenResourceError, anyio.ClosedResourceError, OSError):
-                    await conn.send_line(json.dumps({BYE: 0}))
+                await _send_bye(conn, 0)
                 await anyio.sleep_forever()
         self.connections.add(conn)
         try:
