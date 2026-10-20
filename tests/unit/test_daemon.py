@@ -528,3 +528,27 @@ def test_each_connection_resolves_against_its_own_cwd(sock, tmp_path, monkeypatc
     assert seen == ["/proj/a/x.mp3", "/proj/b/y.mp3"]
     assert "/proj/a/x.mp3" in ra["result"]["content"][0]["text"]
     assert ra["result"]["isError"] and rb["result"]["isError"]
+
+
+def test_a_session_closing_mid_call_does_not_take_down_the_others(sock):
+    async def main():
+        release, started = anyio.Event(), anyio.Event()
+        d = _daemon(_slow_app(release, started), sock)
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(d.serve)
+            await _wait_for(sock)
+            a, b = await Client.connect(sock), await Client.connect(sock)
+            await a.initialize()
+            await b.initialize()
+            await a.send({"id": 7, "method": "tools/call", "params": {"name": "wait"}})
+            await started.wait()
+            await a.stream.aclose()  # a's session ends while its call is running
+            release.set()  # its response now goes to a closed socket
+            await anyio.sleep(0.2)
+            with anyio.fail_after(3):
+                assert (await b.call(2, "ping"))["result"] == {}
+            c = await Client.connect(sock)
+            await c.initialize()
+            tg.cancel_scope.cancel()
+
+    anyio.run(main)

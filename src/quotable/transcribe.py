@@ -125,6 +125,10 @@ def get_model(settings: Settings, *, force_cpu: bool = False):
             model = cls(settings.model, device=device, compute_type=compute_type)
         _model = (key, model)
         _trim_heap()
+        print(
+            f"quotable: loaded Whisper {settings.model} on {device} ({compute_type})",
+            file=sys.stderr,
+        )
         return model
 
 

@@ -31,6 +31,11 @@ references; run the matrix; score it; run the long-run scenarios on an idle GPU;
 probe the MCP surface of the built wheel; render the tables. Each has `--help`, and each but
 the runner has a `--check` or `--validate` that only verifies what exists.
 
+`QUOTABLE_MODEL=turbo QUOTABLE_MODEL_TTL=5 uv run python evals/shared_process_check.py
+tests/fixtures/jfk.flac` is the GPU check for the shared process: two sessions transcribe at
+once through their shims, one process holds the GPU, the second session is told it is queued,
+and nothing is left on the GPU once the TTL has passed. It exits 1 on any failed check.
+
 ## The matrix
 
 `python -m evals.run` expands `corpus.json` into cells:

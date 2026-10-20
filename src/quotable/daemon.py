@@ -206,7 +206,10 @@ class Daemon:
                     return
                 conn.cwd = cwd
                 SESSION_CWD.set(cwd)
-                await self._session(conn, buffered)
+                try:
+                    await self._session(conn, buffered)
+                except Exception as exc:  # one session's failure never ends the others'
+                    _log(f"dropped a connection after an error: {exc!r}")
         finally:
             self.connections.discard(conn)
 
@@ -214,16 +217,24 @@ class Daemon:
         read_writer, read_stream = anyio.create_memory_object_stream[SessionMessage | Exception](0)
         write_stream, write_reader = anyio.create_memory_object_stream[SessionMessage](0)
 
-        async def writer() -> None:
-            async with write_reader:
-                async for session_message in write_reader:
-                    message = session_message.message
-                    await conn.send_line(message.model_dump_json(by_alias=True, exclude_unset=True))
-                    if isinstance(message, JSONRPCResponse | JSONRPCError):
-                        conn.in_flight.discard(message.id)
-                        self._touch()
-
         async with anyio.create_task_group() as tg:
+
+            async def writer() -> None:
+                async with write_reader:
+                    async for session_message in write_reader:
+                        message = session_message.message
+                        line = message.model_dump_json(by_alias=True, exclude_unset=True)
+                        try:
+                            await conn.send_line(line)
+                        except (anyio.BrokenResourceError, anyio.ClosedResourceError, OSError):
+                            # The shim is gone: end this session, cancelling its calls, so a
+                            # transcription it started stops and frees the GPU queue.
+                            tg.cancel_scope.cancel()
+                            return
+                        if isinstance(message, JSONRPCResponse | JSONRPCError):
+                            conn.in_flight.discard(message.id)
+                            self._touch()
+
             tg.start_soon(self._reader, conn, buffered, read_writer)
             tg.start_soon(writer)
             await self.lowlevel.run(

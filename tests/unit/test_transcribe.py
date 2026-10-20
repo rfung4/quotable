@@ -177,6 +177,12 @@ def test_a_run_that_fails_to_start_still_arms_the_timer(monkeypatch):
     assert tx._unload_timer is not None
 
 
+def test_a_model_load_is_logged_once(capsys):
+    _run(_settings())
+    _run(_settings())
+    assert capsys.readouterr().err.count("quotable: loaded Whisper base on cpu (int8)") == 1
+
+
 def test_ttl_zero_keeps_the_model_loaded():
     _run(_settings(model_ttl=0))
     assert tx._unload_timer is None
@@ -316,7 +322,7 @@ def test_guard_keeps_vad_when_it_keeps_the_sound(loud_minute, capsys):
     FakeModel.after_vad = 58.0
     run, _ = _run(_settings())
     assert [c["vad_filter"] for c in FakeModel.calls] == [True]
-    assert run.vad is True and capsys.readouterr().err == ""
+    assert run.vad is True and "voice filter" not in capsys.readouterr().err
 
 
 def test_guard_leaves_silence_to_the_vad():
@@ -331,7 +337,7 @@ def test_quotable_vad_on_and_off_skip_the_guard(loud_minute, capsys, mode, expec
     FakeModel.after_vad = 15.0
     run, _ = _run(_settings(vad=mode))
     assert [c["vad_filter"] for c in FakeModel.calls] == expected
-    assert run.vad is (mode == "on") and capsys.readouterr().err == ""
+    assert run.vad is (mode == "on") and "voice filter" not in capsys.readouterr().err
 
 
 def test_resume_without_vad_decodes_from_the_resume_point(loud_minute, monkeypatch):
