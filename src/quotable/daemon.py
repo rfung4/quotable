@@ -44,6 +44,9 @@ from quotable.models import QuotableError
 MAX_LINE = 16 * 1024 * 1024
 TICK_S = 1.0
 BYE = "quotable_bye"
+# Requests held open for the whole session (Claude Code opens one at start): not calls, so
+# they never keep the process from going idle.
+STREAMS = frozenset({"subscriptions/listen"})
 # The connection's hello cwd; request handlers inherit it from the connection's task.
 # ``None`` when serving in-process, where the process cwd is the session's.
 SESSION_CWD: ContextVar[str | None] = ContextVar("quotable_session_cwd", default=None)
@@ -266,7 +269,7 @@ class Daemon:
                     conn.lines_read += 1
                     self._touch()
                     message = item.message if isinstance(item, SessionMessage) else None
-                    if isinstance(message, JSONRPCRequest):
+                    if isinstance(message, JSONRPCRequest) and message.method not in STREAMS:
                         conn.in_flight.add(message.id)
                     elif (
                         isinstance(message, JSONRPCNotification)

@@ -336,6 +336,42 @@ def test_a_cancelled_request_is_no_longer_in_flight(sock):
     anyio.run(main)
 
 
+def test_an_open_subscription_is_not_in_flight(sock):
+    """Dogfood bug: Claude Code opens ``subscriptions/listen`` for the whole session and it
+    never gets a response, so every attached session kept the process from idling."""
+
+    async def main():
+        d = _daemon(MCPServer("t"), sock, ttl_s=0.1)
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(d.serve)
+            await _wait_for(sock)
+            c = await Client.connect(sock)
+            # Claude Code's opening, captured from 2.1.304: no initialize.
+            meta = {
+                "_meta": {
+                    "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                    "io.modelcontextprotocol/clientInfo": {"name": "claude-code", "version": "2"},
+                    "io.modelcontextprotocol/clientCapabilities": {},
+                }
+            }
+            await c.send({"id": "probe", "method": "server/discover", "params": meta})
+            assert "result" in await c.response("probe")
+            await c.send(
+                {
+                    "id": "listen:0",
+                    "method": "subscriptions/listen",
+                    "params": {**meta, "notifications": {"toolsListChanged": True}},
+                }
+            )
+            with anyio.fail_after(3):
+                message = await c.recv()
+                while daemon.BYE not in message:
+                    message = await c.recv()
+            assert message == {daemon.BYE: c.sent}
+
+    anyio.run(main)
+
+
 def test_busy_inference_postpones_exit(sock):
     busy = [True]
     d = _daemon(MCPServer("t"), sock, ttl_s=0.05, busy=lambda: busy[0])
