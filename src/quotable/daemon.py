@@ -14,7 +14,6 @@ twice.
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import sys
@@ -43,6 +42,7 @@ from quotable.models import QuotableError
 
 MAX_LINE = 16 * 1024 * 1024
 TICK_S = 1.0
+DRAIN_S = 0.2
 BYE = "quotable_bye"
 # Requests held open for the whole session (Claude Code opens one at start): not calls, so
 # they never keep the process from going idle.
@@ -54,6 +54,8 @@ SESSION_CWD: ContextVar[str | None] = ContextVar("quotable_session_cwd", default
 
 def take_lock(sock: Path) -> IO[str] | None:
     """The lifetime lock; ``None`` when another process holds it. Keep the file open."""
+    import fcntl  # POSIX only, and Windows imports this module (``server`` uses SESSION_CWD)
+
     lock = open(f"{sock}.lock", "a")  # held until the process exits
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -135,7 +137,7 @@ class Daemon:
         self.busy = busy
         self.tick_s = tick_s
         self.connections: set[_Connection] = set()
-        self.accepting: anyio.CancelScope | None = None  # needs the event loop; set in serve
+        self.exiting = False
         self.last_activity = 0.0
 
     def _touch(self) -> None:
@@ -145,19 +147,15 @@ class Daemon:
         with suppress(FileNotFoundError):
             self.sock.unlink()  # a crashed holder's leftover; we hold the lock
         listener = await anyio.create_unix_listener(self.sock)
-        self.accepting = anyio.CancelScope()
         self._touch()
         _log(f"serving {self.sock}")
         try:
             async with anyio.create_task_group() as tg:
 
-                async def accept(scope: anyio.CancelScope) -> None:
-                    with scope:
-                        await listener.serve(self._handle, task_group=tg)
-
-                tg.start_soon(accept, self.accepting)
+                tg.start_soon(listener.serve, self._handle, tg)
                 reason = await self._watch()
                 await self._bye(reason)
+                await anyio.sleep(DRAIN_S)  # accept, and bye, whatever was still in the backlog
                 tg.cancel_scope.cancel()
         finally:
             with suppress(FileNotFoundError):
@@ -169,15 +167,21 @@ class Daemon:
             await anyio.sleep(self.tick_s)
             if self.busy() or any(c.in_flight for c in self.connections):
                 continue
-            if self.current_key() != self.key:
+            try:
+                current = self.current_key()
+            except OSError as exc:  # a source file replaced mid-checkout: look again next tick
+                _log(f"could not check the key: {exc!r}")
+                continue
+            if current != self.key:
                 reason = "outdated"
             elif self.ttl_s > 0 and anyio.current_time() - self.last_activity >= self.ttl_s:
                 reason = "idle"
             else:
                 continue
             # No await between the in-flight check and here: no line can be read in between.
-            if self.accepting is not None:
-                self.accepting.cancel()
+            self.exiting = True
+            with suppress(FileNotFoundError):
+                self.sock.unlink()  # a shim connecting now spawns a fresh process instead
             for conn in self.connections:
                 conn.reading.cancel()
             return reason
@@ -191,6 +195,11 @@ class Daemon:
 
     async def _handle(self, stream: SocketStream) -> None:
         conn = _Connection(stream)
+        if self.exiting:  # accepted after the exit was decided: nothing read, nothing to resend
+            async with stream:
+                with suppress(anyio.BrokenResourceError, anyio.ClosedResourceError, OSError):
+                    await conn.send_line(json.dumps({BYE: 0}))
+                await anyio.sleep_forever()
         self.connections.add(conn)
         try:
             async with stream:
@@ -209,10 +218,9 @@ class Daemon:
                     return
                 conn.cwd = cwd
                 SESSION_CWD.set(cwd)
-                try:
-                    await self._session(conn, buffered)
-                except Exception as exc:  # one session's failure never ends the others'
-                    _log(f"dropped a connection after an error: {exc!r}")
+                await self._session(conn, buffered)
+        except Exception as exc:  # one connection's failure, hello included, never ends the others'
+            _log(f"dropped a connection after an error: {exc!r}")
         finally:
             self.connections.discard(conn)
 

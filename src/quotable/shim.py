@@ -185,6 +185,7 @@ def spawn_daemon(env: Mapping[str, str]) -> subprocess.Popen:
             stderr=stderr,
             env=dict(env),
             start_new_session=True,
+            cwd="/",  # `-m` puts the cwd on sys.path: a quotable/ there would shadow the install
         )
 
 

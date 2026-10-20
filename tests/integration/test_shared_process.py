@@ -9,6 +9,7 @@ zombie until the shim next wakes, so "gone" means no such process or a zombie.
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -190,9 +191,15 @@ def test_no_process_remains_after_the_ttl(monkeypatch):
     assert not any(p.suffix == ".sock" for p in shim.runtime_dir().iterdir())
 
 
-def test_a_touched_source_file_moves_to_a_new_process(monkeypatch):
-    source = shim.PACKAGE_DIR / "feeds.py"
-    st = source.stat()
+def test_a_touched_source_file_moves_to_a_new_process(monkeypatch, tmp_path):
+    # A private copy, imported first through PYTHONPATH: touching the real source would also
+    # retire the developer's own shared process when the tool is an editable install.
+    shutil.copytree(
+        shim.PACKAGE_DIR, tmp_path / "quotable", ignore=shutil.ignore_patterns("__pycache__")
+    )
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+    source = tmp_path / "quotable" / "feeds.py"
+    real_mtime = (shim.PACKAGE_DIR / "feeds.py").stat().st_mtime_ns
 
     async def main():
         async with _client() as client:
@@ -205,11 +212,9 @@ def test_a_touched_source_file_moves_to_a_new_process(monkeypatch):
             ((_, new_sock),) = [s for s in _served() if s[0] != old_pid]
             return old_sock, new_sock
 
-    try:
-        old_sock, new_sock = _run(main, 60)
-    finally:
-        os.utime(source, ns=(st.st_atime_ns, st.st_mtime_ns))
+    old_sock, new_sock = _run(main, 60)
     assert old_sock != new_sock
+    assert (shim.PACKAGE_DIR / "feeds.py").stat().st_mtime_ns == real_mtime
 
 
 # --- crash and cancel ----------------------------------------------------------------------

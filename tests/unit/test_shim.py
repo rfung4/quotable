@@ -650,4 +650,5 @@ def test_spawn_daemon_detaches_and_logs(monkeypatch, tmp_path):
     assert seen["stdin"] is subprocess.DEVNULL and seen["stdout"] is subprocess.DEVNULL
     assert seen["stderr_name"] == str(tmp_path / "quotable" / "daemon.log")
     assert seen["start_new_session"] is True
+    assert seen["cwd"] == "/"  # `-m` puts the cwd on sys.path: a quotable/ there would shadow
     assert seen["env"] == env

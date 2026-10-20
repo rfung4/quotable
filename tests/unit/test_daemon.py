@@ -588,3 +588,93 @@ def test_a_session_closing_mid_call_does_not_take_down_the_others(sock):
             tg.cancel_scope.cancel()
 
     anyio.run(main)
+
+
+# --- review fixes (close-dev, 2026-10-20) ----------------------------------------------------
+
+
+def test_server_and_cli_import_without_fcntl():
+    """Windows has no fcntl and serves in-process through ``server``, which imports this module."""
+    # Only quotable's own imports are refused: mcp guards its fcntl on sys.platform.
+    code = (
+        "import builtins\n"
+        "real = builtins.__import__\n"
+        "def guarded(name, globals=None, *args, **kwargs):\n"
+        "    if name == 'fcntl' and (globals or {}).get('__name__', '').startswith('quotable'):\n"
+        "        raise ModuleNotFoundError(\"No module named 'fcntl'\")\n"
+        "    return real(name, globals, *args, **kwargs)\n"
+        "builtins.__import__ = guarded\n"
+        "import quotable.server, quotable.cli\n"
+    )
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+
+
+def test_socket_is_unlinked_as_soon_as_the_exit_is_decided(sock, monkeypatch):
+    """A shim connecting while byes go out would get EOF without one and fail its call;
+    with the socket gone it spawns a fresh process instead."""
+    d = _daemon(MCPServer("t"), sock, ttl_s=0.1)
+    gate, in_bye = anyio.Event(), anyio.Event()
+    bye = d._bye
+
+    async def slow_bye(reason):
+        in_bye.set()
+        await gate.wait()
+        await bye(reason)
+
+    monkeypatch.setattr(d, "_bye", slow_bye)
+
+    async def main():
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(d.serve)
+            await _wait_for(sock)
+            a = await Client.connect(sock)
+            with anyio.fail_after(3):
+                await in_bye.wait()
+            assert not sock.exists()
+            gate.set()
+            with anyio.fail_after(3):
+                assert await a.recv() == {daemon.BYE: 0}
+
+    anyio.run(main)
+
+
+def test_a_bad_hello_does_not_take_down_the_process(sock, monkeypatch):
+    monkeypatch.setattr(daemon, "MAX_LINE", 64)
+    d = _daemon(MCPServer("t"), sock, ttl_s=0.3)
+
+    async def main():
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(d.serve)
+            await _wait_for(sock)
+            bad = await anyio.connect_unix(sock)
+            await bad.send(b"x" * 200)  # no newline within MAX_LINE
+            await anyio.sleep(0.1)
+            b = await Client.connect(sock)
+            with anyio.fail_after(3):
+                assert await b.recv() == {daemon.BYE: 0}
+
+    anyio.run(main)
+
+
+def test_a_failing_key_check_is_retried_not_fatal(sock):
+    calls = []
+
+    def flaky_key():
+        calls.append(1)
+        if len(calls) <= 2:
+            raise FileNotFoundError("src/quotable/feeds.py")  # replaced mid-checkout
+        return "k"
+
+    d = _daemon(MCPServer("t"), sock, ttl_s=0.2, current_key=flaky_key)
+
+    async def main():
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(d.serve)
+            await _wait_for(sock)
+            a = await Client.connect(sock)
+            with anyio.fail_after(3):
+                assert await a.recv() == {daemon.BYE: 0}
+
+    anyio.run(main)
+    assert len(calls) > 2
